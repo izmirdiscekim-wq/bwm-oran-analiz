@@ -1,0 +1,310 @@
+{
+"1": {
+"ad": "Maç Sonucu",
+"st": 1
+},
+"11": {
+"ad": "Alt/Üst {0}",
+"st": 101
+},
+"12": {
+"ad": "Alt/Üst {0}",
+"st": 101
+},
+"13": {
+"ad": "Alt/Üst {0}",
+"st": 101
+},
+"14": {
+"ad": "1. Yarı Alt/Üst {0}",
+"st": 60
+},
+"15": {
+"ad": "1. Yarı Alt/Üst {0}",
+"st": 60
+},
+"155": {
+"ad": "Alt/Üst {0}",
+"st": 101
+},
+"157": {
+"ad": "1. Yarı Alt/Üst {0}",
+"st": 60
+},
+"161": {
+"ad": "Ev Sahibi Alt/Üst {0}",
+"st": 603
+},
+"164": {
+"ad": "Deplasman Alt/Üst {0}",
+"st": 604
+},
+"20": {
+"ad": "Ev Sahibi Alt/Üst {0}",
+"st": 603
+},
+"207": {
+"ad": "Alt/Üst {0}",
+"st": 101
+},
+"209": {
+"ad": "1. Yarı Alt/Üst {0}",
+"st": 60
+},
+"212": {
+"ad": "Ev Sahibi Alt/Üst {0}",
+"st": 603
+},
+"216": {
+"ad": "Toplam Korner Sayısı Alt/Üst {0}",
+"st": 48
+},
+"218": {
+"ad": "1. Yarı Toplam Korner Sayısı Alt/Üst {0}",
+"st": 49
+},
+"220": {
+"ad": "Kim Daha Çok Korner Kullanır",
+"st": 52
+},
+"222": {
+"ad": "1. Yarı Kim Daha Çok Korner Kullanır",
+"st": 53
+},
+"224": {
+"ad": "İlk Korneri Kim Kullanır",
+"st": 56
+},
+"256": {
+"ad": "Deplasman Alt/Üst {0}",
+"st": 604
+},
+"268": {
+"ad": "Handikaplı Maç Sonucu {h}",
+"st": 100
+},
+"272": {
+"ad": "Maç Sonucu ve Alt/Üst {0}",
+"st": 7
+},
+"29": {
+"ad": "Deplasman Alt/Üst {0}",
+"st": 604
+},
+"291": {
+"ad": "İlk Golü Hangi Takım Atar",
+"st": 87
+},
+"295": {
+"ad": "Ev Sahibi Her İki Yarıda da Gol Atar",
+"st": 861
+},
+"296": {
+"ad": "Deplasman Her İki Yarıda da Gol Atar",
+"st": 862
+},
+"299": {
+"ad": "Korner Tek/Çift",
+"st": 737
+},
+"3": {
+"ad": "Çifte Şans",
+"st": 92
+},
+"301": {
+"ad": "Toplam Kart Sayısı Alt/Üst {0}",
+"st": 658
+},
+"326": {
+"ad": "Ev Sahibi Alt/Üst {0}",
+"st": 603
+},
+"327": {
+"ad": "Ev Sahibi Alt/Üst {0}",
+"st": 603
+},
+"328": {
+"ad": "Deplasman Alt/Üst {0}",
+"st": 604
+},
+"329": {
+"ad": "Deplasman Alt/Üst {0}",
+"st": 604
+},
+"338": {
+"ad": "Toplam Korner Aralığı",
+"st": 67
+},
+"340": {
+"ad": "1. Yarı Toplam Korner Aralığı",
+"st": 68
+},
+"342": {
+"ad": "Maç Sonucu ve Alt/Üst {0}",
+"st": 7
+},
+"343": {
+"ad": "Maç Sonucu ve Alt/Üst {0}",
+"st": 7
+},
+"38": {
+"ad": "Karşılıklı Gol",
+"st": 89
+},
+"414": {
+"ad": "Maç Sonucu ve Karşılıklı Gol",
+"st": 698
+},
+"416": {
+"ad": "1. Yarı Sonucu ve İlk Yarı Karşılıklı Gol",
+"st": 699
+},
+"43": {
+"ad": "Toplam Gol",
+"st": 4
+},
+"446": {
+"ad": "Altı/Üstü {0} ve Karşılıklı Gol",
+"st": 700
+},
+"450": {
+"ad": "1. Yarı Tek/Çift",
+"st": 719
+},
+"452": {
+"ad": "1. Yarı Karşılıklı Gol",
+"st": 720
+},
+"455": {
+"ad": "Ev Sahibi 1. Yarı Altı/Üstü {0}",
+"st": 722
+},
+"457": {
+"ad": "Deplasman 1. Yarı Altı/Üstü {0}",
+"st": 723
+},
+"459": {
+"ad": "1. Yarı Sonucu ve Altı/Üstü {0}",
+"st": 724
+},
+"48": {
+"ad": "Hangi Yarıda Daha Fazla Gol Olur",
+"st": 6
+},
+"49": {
+"ad": "Tek / Çift",
+"st": 91
+},
+"5": {
+"ad": "1. Yarı / Maç Sonucu",
+"st": 90
+},
+"528": {
+"ad": "Her İki Yarıda da Alt 1.5",
+"st": 729
+},
+"529": {
+"ad": "Her İki Yarıda da Üst 1.5",
+"st": 730
+},
+"571": {
+"ad": "1. Yarı/Maç Sonucu Skorları",
+"st": 718
+},
+"584": {
+"ad": "Ev Sahibi Yarı Kazanır",
+"st": 727
+},
+"585": {
+"ad": "Deplasman Yarı Kazanır",
+"st": 728
+},
+"586": {
+"ad": "Ev Sahibi Hangi Yarıda Daha Fazla Gol Atar",
+"st": 84
+},
+"587": {
+"ad": "Deplasman Hangi Yarıda Daha Fazla Gol Atar",
+"st": 85
+},
+"588": {
+"ad": "Hangi Takım Kaç Farkla Kazanır?",
+"st": 11
+},
+"589": {
+"ad": "Ev Sahibi Gol Yemeden Kazanır",
+"st": 643
+},
+"590": {
+"ad": "Deplasman Gol Yemeden Kazanır",
+"st": 644
+},
+"591": {
+"ad": "Ev Sahibi Her İki Yarıyı Kazanır",
+"st": 69
+},
+"592": {
+"ad": "Deplasman Her İki Yarıyı Kazanır",
+"st": 72
+},
+"599": {
+"ad": "2. Yarı Karşılıklı Gol",
+"st": 821
+},
+"601": {
+"ad": "Ev Sahibi Toplam Korner Altı/Üstü {0}",
+"st": 822
+},
+"602": {
+"ad": "Deplasman Toplam Korner Altı/Üstü {0}",
+"st": 823
+},
+"603": {
+"ad": "Kim Daha Çok Kart Görür",
+"st": 824
+},
+"7": {
+"ad": "1. Yarı Sonucu",
+"st": 88
+},
+"701": {
+"ad": "Oyuncu Gol Atar",
+"st": 12
+},
+"716": {
+"ad": "Karşılaşma Özel Bahisleri",
+"st": 830
+},
+"777": {
+"ad": "Maç Skoru",
+"st": 86
+},
+"779": {
+"ad": "1. Yarı Skoru",
+"st": 717
+},
+"798": {
+"ad": "Korner Handikap {h}",
+"st": 863
+},
+"799": {
+"ad": "1. Yarı Korner Handikap {h}",
+"st": 864
+},
+"8": {
+"ad": "1. Yarı Çifte Şans",
+"st": 77
+},
+"800": {
+"ad": "1. Yarı Toplam Kart Altı/Üstü {0}",
+"st": 865
+},
+"801": {
+"ad": "1. Yarı ve 2. Yarıda Karşılıklı Gol Olur",
+"st": 866
+},
+"9": {
+"ad": "2. Yarı Sonucu",
+"st": 36
+}
+}

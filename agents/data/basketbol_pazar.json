@@ -1,0 +1,102 @@
+{
+"142": {
+"ad": "Maç Sonucu (Uzt.Dahil)",
+"st": 2
+},
+"143": {
+"ad": "1. Yarı / Maç Sonucu",
+"st": 111
+},
+"144": {
+"ad": "Handikaplı Maç Sonucu (Uzt.Dahil) {h}",
+"st": 113
+},
+"145": {
+"ad": "Maç Sonucu ve Alt/Üst (Uzt.Dahil) {0}",
+"st": 622
+},
+"147": {
+"ad": "1. Yarı Sonucu",
+"st": 621
+},
+"148": {
+"ad": "Handikaplı 1. Yarı Sonucu {h}",
+"st": 115
+},
+"149": {
+"ad": "Toplam Sayı Alt/Üst (Uzt.Dahil)  {0}",
+"st": 114
+},
+"150": {
+"ad": "Ev Sahibi Alt/Üst (Uzt.Dahil) {0}",
+"st": 619
+},
+"151": {
+"ad": "Deplasman Alt/Üst (Uzt.Dahil) {0}",
+"st": 620
+},
+"152": {
+"ad": "1. Yarı Toplam Sayı Alt/Üst {0}",
+"st": 116
+},
+"226": {
+"ad": "Uzatma Evet / Hayır",
+"st": 104
+},
+"231": {
+"ad": "Hangi Çeyrekte Daha Çok Sayı Olur",
+"st": 107
+},
+"544": {
+"ad": "Ev Sahibi 1. Yarı Altı/Üstü {0}",
+"st": 746
+},
+"545": {
+"ad": "Deplasman 1. Yarı Altı/Üstü {0}",
+"st": 747
+},
+"570": {
+"ad": "Sayı Aralığı(Uzt.Hariç)",
+"st": 750
+},
+"583": {
+"ad": "Hangi Takım Kaç Farkla Kazanır? (Uzt.Dahil)",
+"st": 105
+},
+"659": {
+"ad": "{0}. Çeyrek Altı/Üstü {1}",
+"st": 777
+},
+"745": {
+"ad": "{0}. Çeyrek Sonucu",
+"st": 776
+},
+"746": {
+"ad": "{0}. Çeyrek Sonucu",
+"st": 776
+},
+"747": {
+"ad": "{0}. Çeyrek Sonucu",
+"st": 776
+},
+"748": {
+"ad": "{0}. Çeyrek Sonucu",
+"st": 776
+},
+"810": {
+"ad": "Ev Sahibi Tüm Çeyrekleri Kazanır",
+"st": 867
+},
+"811": {
+"ad": "Deplasman Tüm Çeyrekleri Kazanır",
+"st": 868
+},
+"812": {
+"ad": "En Yüksek Skorlu Çeyrek Altı/Üstü {0}",
+"st": 869
+},
+"813": {
+"ad": "En Düşük Skorlu Çeyrek Altı/Üstü {0}",
+"st": 870
+}
+}

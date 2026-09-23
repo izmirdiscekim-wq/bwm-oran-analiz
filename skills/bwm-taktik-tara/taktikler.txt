@@ -1,0 +1,129 @@
+# TAKTİK KAYDI — kategori "Oran Analizi". Kullanıcı düzenler; `bwm.py taktik` okur (kod değişikliği gerekmez).
+# Dosyayı okumadan yönet: bwm.py taktik --liste | --kurallar | --ekle | --degistir | --kapat | --ac | --sil (her yazmada .bak yedeği alınır)
+# Biçim:
+#   [Taktik adı]                    yeni taktik
+#   kategori: Oran Analizi          gruplama (varsayılan Oran Analizi)   |  eklendi: 2026-09-21  kayıt tarihi
+#   hedef: metin                    aranan sonuç
+#   oyna: kod [kod]                 listede oranı gösterilecek pazar(lar)
+#   basari: top>=5                  sonuç ifadesi (isabet ölçümü): top ev dep iyev iydep iytop kg iykg ykg2
+#   aktif: hayir                    geçici kapat
+#   not: metin  |  orijinal: metin  çıktıya not  |  kullanıcının video/metin ifadesi (kayıt amaçlı, kural değildir)
+#   <kod> <aralık>                  kural; tümü sağlanmalı (VE). aralık: 4.20-5.10 | >=4.2 | <=5.1 | =7.00 (virgül de olur)
+#                                    birden çok aralık VEYA'lanır: 4.45-4.55|4.70-4.80  |  =X ±0.05 tolerans alır (oranlar tam basılmayabilir)
+#   <kod>@ilk <aralık>              arşivdeki ilk kayıtlı oranla ("açılış"; gerçek açılış değil, arşiv 21.09.2026'da başladı)
+#   @kod ad = t<MTID>[/SOV]/<N>     özel pazar kodu (ör. @kod tg6 = t43/4  # Toplam Gol 6+)
+#   iygolfav <aralık>               favoriye göre değişen kural: MS'de düşük oranlı taraf ev ise İY1&1.5Ü, deplasman ise İY2&1.5Ü kullanılır
+#   msfav / msalt <aralık>          favori / favori-olmayan takımın MS oranı (favori = MS'de düşük oranlı taraf)
+# Her taktik taraması otomatik 2 liste verir: KAPANIŞ (kickoff'a ≤20 dk, hedef 5-10 dk) ve GÜNCEL (kapanış öncesi, oran değişebilir); ayrı alan gerekmez.
+# Kodlar: bwm.py taktik --kodlar   |   '#' sonrası yorumdur.
+@kod skor51 = t777/11        # Maç Skoru: 5:1
+@kod iy1kgvar = t416/1       # 1. Yarı Sonucu ve İlk Yarı Karşılıklı Gol: 1 ve Var
+@kod iyres2 = t7/3           # 1. Yarı Sonucu: 2 (deplasman önde)
+@kod ms1u35 = t272/3.5/4     # Maç Sonucu ve Alt/Üst 3.5: 1 ve Üst
+
+[4,5 Üst A]
+kategori: Oran Analizi
+eklendi: 2026-09-21
+hedef: Maç sonu 4,5 Üst
+oyna: u45
+basari: top>=5
+orijinal: 4,5 Üst oranı 4,20-5,10; 1. Yarı 1 ve 1,5 Üst oranı 5,40-6,20; 4-5 gol aralığı 2,80-3,10; böyle olursa maç sonu 4,5 üst ara
+u45            4.20-5.10   # 4,5 Üst
+iy1u15         5.40-6.20   # 1. Yarı 1 ve 1,5 Üst (İY sonucu 1 + İY 1.5 Üst kombine pazarı; yorum, video özetinden)
+tg45           2.80-3.10   # Toplam Gol 4-5
+
+[İlk Yarı Karşılıklı Gol Var]
+kategori: Oran Analizi
+eklendi: 2026-09-21
+hedef: İlk yarı karşılıklı gol Var
+oyna: iykg
+basari: iykg
+orijinal: İlk yarı karşılıklı gol var 3.25-3.48; ilk ve ikinci yarı karşılıklı gol var 9.80-10.80; 6+ gol 8.42-8.60; ilk yarı karşılıklı gol varı ara
+iykg           3.25-3.48   # İlk Yarı Karşılıklı Gol Var
+iy2ykg         9.80-10.80  # 1. Yarı ve 2. Yarıda Karşılıklı Gol Var (ikisi de Var; N3, veriyle doğrulandı)
+tg6            8.42-8.60   # 6+ Gol
+
+[4,5 Üst B]
+kategori: Oran Analizi
+eklendi: 2026-09-21
+hedef: Maç sonu 4,5 Üst
+oyna: u45
+basari: top>=5
+orijinal: iki yarıda da 1,5 üst evet 5,20-5,40; 1. yarı ev sahibi 0,5 üst 1,95-2,12; toplam 4-5 gol 3,60-3,90; maç sonu 4,5 üst ara
+ciftu15        5.20-5.40   # İki yarıda da 1,5 Üst: Evet
+eviyu05        1.95-2.12   # 1. Yarı Ev Sahibi 0,5 Üst
+tg45           3.60-3.90   # Toplam Gol 4-5
+
+[İlk Yarı 1-1 Skor]
+kategori: Oran Analizi
+eklendi: 2026-09-21
+hedef: İlk yarı skoru 1-1
+oyna: iyskor11
+basari: iyev==1 and iydep==1
+orijinal: İlk yarı 1-1 skoru açılış oranı 8.00-8.92; ev sahibi hangi yarıda daha çok gol atar: birinci yarı 2.70-2.90; ilk yarı karşılıklı gol var 4.20-4.50; ilk yarı skor 1-1 ara
+iyskor11@ilk   8.00-8.92   # İlk Yarı 1-1 Skoru, AÇILIŞ oranı
+evyari1        2.70-2.90   # Ev Sahibi Hangi Yarıda Daha Çok Gol Atar: 1. yarı
+iykg           4.20-4.50   # İlk Yarı Karşılıklı Gol Var
+
+[+6 Gol]
+kategori: Oran Analizi
+eklendi: 2026-09-21
+hedef: Maç sonu 6+ gol
+oyna: tg6
+basari: top>=6
+orijinal: 6+ gol 8.60-8.84; ikinci yarı karşılıklı gol var 2.90-3.12; iki yarıda da 1.5 üst 3.80-4.20; maç sonu +6 gol ara
+tg6            8.60-8.84   # 6+ Gol
+ykg2           2.90-3.12   # İkinci Yarı Karşılıklı Gol Var
+ciftu15        3.80-4.20   # İki yarıda da 1,5 Üst: Evet
+
+[5-1 Maç Sonu Kesin Skor]
+kategori: Oran Analizi
+eklendi: 2026-09-22
+hedef: Maç sonu tam 5-1 skor
+oyna: skor51
+basari: ev==5 and dep==1
+orijinal: 5-1 skor oranı 11.80-12.90; 1. Yarı 1 ve Var oranı 5.30-5.52; 1. Yarı KG Var oranı 3.30-3.58; maçın 5-1 bitmesi hedeflenir
+skor51         11.80-12.90
+iy1kgvar       5.30-5.52  
+iykg           3.30-3.58  
+
+[2/1 Sürpriz]
+kategori: Oran Analizi
+eklendi: 2026-09-22
+hedef: İlk yarı deplasman önde (İY 2), maç sonu ev sahibi kazanır (MS 1)
+oyna: ms1
+basari: iydep>iyev and ev>dep
+orijinal: 1. Yarı 2 oranı 4.24-4.38; MS 1 oranı 1.48-1.52; MS 1 ve 3.5 Üst oranı 3.40-3.44; ilk yarıyı deplasmanın önde kapatıp maçı ev sahibinin kazanması hedeflenir
+iyres2         4.24-4.38  
+ms1            1.48-1.52  
+ms1u35         3.40-3.44  
+
+[Kapanış 4,5 Üst]
+kategori: Oran Analizi
+eklendi: 2026-09-22
+hedef: Maç sonu 4,5 Üst (kapanış oranıyla)
+oyna: u45
+basari: top>=5
+orijinal: Bahislerinizi yaparken maçın başlamasına 5-10 dakika kala güncellenen kapanış oranlarını baz almanız gerekir. 4,5 Gol Üstü: oranın 4,80-5,30 arasında olması. İlk Yarı Gol Durumu: ev sahibi favoriyse İY1 ve 1,5 Üst, deplasman favoriyse İY2 ve 1,5 Üst oranının 5,90-6,30 arasında olması
+u45            4.80-5.30  
+iygolfav       5.90-6.30  
+
+[Kapanış 4,5 Alt]
+kategori: Oran Analizi
+eklendi: 2026-09-22
+hedef: Maç sonu 4,5 Alt (kapanış oranıyla)
+oyna: a45
+basari: top<=4
+orijinal: Bahislerinizi yaparken maçın başlamasına 5-10 dakika kala güncellenen kapanış oranlarını baz almanız gerekir. 4,5 Gol Altı: oranın 3,30-3,40 arasında olması. İlk Yarı Gol Durumu: ev sahibi favoriyse İY1 ve 1,5 Üst, deplasman favoriyse İY2 ve 1,5 Üst oranının 5,90-6,30 arasında olması
+a45            3.30-3.40  
+iygolfav       5.90-6.30  
+
+[2/1-1/2 Oran Sürprizi]
+kategori: Oran Analizi
+eklendi: 2026-09-22
+hedef: Favori takım İY'yi kaybedip MS'i kazanır (2/1 ev favoriyse, 1/2 deplasman favoriyse)
+oyna: msfav msalt
+basari: (iydep>iyev and ev>dep) or (iyev>iydep and dep>ev)
+orijinal: Oran takibiyle 2/1 (İY2/MS1) ve 1/2 (İY1/MS2) skorlarını yakalama taktiği. Favori takım oranı 1.60-1.69 arasında; favori olmayan (diğer) takım oranı sabit 4.50 veya 4.70-4.80 aralığında olmalı
+msfav          1.60-1.69  
+msalt          4.45-4.55|4.70-4.80
