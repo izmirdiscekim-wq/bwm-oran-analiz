@@ -9,7 +9,7 @@ import subprocess
 import sys
 import threading
 import time
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 import requests
 
@@ -137,7 +137,7 @@ def validate_bot_token(token):
         raise SystemExit(f"Telegram API ön kontrolü başarısız: {error}") from None
 
 
-class HealthHandler(BaseHTTPRequestHandler):
+class HealthCheckHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
         self.send_header("Content-Type", "text/plain; charset=utf-8")
@@ -151,13 +151,11 @@ class HealthHandler(BaseHTTPRequestHandler):
 def saglik_sunucusu_baslat():
     try:
         port = int(os.environ.get("PORT", 10000))
-        server = ThreadingHTTPServer(("0.0.0.0", port), HealthHandler)
-        threading.Thread(target=server.serve_forever, daemon=True).start()
+        server = HTTPServer(("0.0.0.0", port), HealthCheckHandler)
         print(f"HTTP Saglik sunucusu {port} portunda baslatildi.", flush=True)
-        return server
+        server.serve_forever()
     except Exception as e:
         print(f"HTTP Sunucu Hatasi: {e}", flush=True)
-        return None
 
 
 def match_key(event):
@@ -207,7 +205,7 @@ def otomatik_dongu(token, allowed_user_ids):
 
 
 def main():
-    saglik_sunucusu_baslat()
+    threading.Thread(target=saglik_sunucusu_baslat, daemon=True).start()
     token = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
     allowed_ids = os.environ.get("TELEGRAM_ALLOWED_USER_IDS", "").strip()
     if not token:
