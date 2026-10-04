@@ -696,6 +696,45 @@ def _tara_canli(a, taktikler):
         _iz_yaz(a.iz_kaydet, iz_satirlari)
 
 
+def _tara_telegram(a, taktikler):
+    veri, _ = N.bulten(True)
+    if not a.kayitsiz:
+        N._arsive_yaz(veri)
+    now = time.time()
+    bugun = sorted((e for e in veri["olaylar"] if e["esd"] > now and N._gun_ok(e["esd"], "bugun")), key=lambda e: e["esd"])
+    maclar = {}
+    for t in taktikler:
+        ks = t["kurallar"]
+        if not ks or t.get("spor", "futbol") != "futbol":
+            continue
+        for e in bugun:
+            s = degerlendir(e, ks)
+            if not all(ok for _, ok in s):
+                continue
+            if t.get("istatistik"):
+                sonuc, hedefler = istatistik_uygula(t, e)
+                if not sonuc:
+                    continue
+            else:
+                hedefler = t["oyna"]
+            maclar.setdefault((e["esd_ms"], e["hn"], e["an"]), (e, []))[1].append((t, s, hedefler))
+    if _FLASH["cache_iy"] is not None:
+        import fetch_flash as FF
+        FF.save_cache_iy(_FLASH["cache_iy"])
+    if not maclar:
+        print("Bugün şu an taktiklere uyan maç yok")
+        return
+    print(f"Bugün taktiklere uyan maçlar (güncel oran, {datetime.fromtimestamp(veri['cekim'], N.TR):%H:%M})")
+    for e, uyanlar in maclar.values():
+        ms = N._mk(e, 1)
+        print(f"\n{datetime.fromtimestamp(e['esd'], N.TR):%H:%M} · {e['lig']} · {e['hn']} - {e['an']}")
+        print(f"MS {_fmt(ms.get('1'))}/{_fmt(ms.get('2'))}/{_fmt(ms.get('3'))}")
+        for t, s, hedefler in uyanlar:
+            oy = " / ".join(f"{o} {_oyna_deger(e, o)}" for o in hedefler)
+            print(f"• {t['ad']}: OYNA {oy}")
+            print("  " + " ".join(f"{_kural_etiket(k, _mk_icin(e, k))} {_fmt(v)}" for k, (v, _) in zip(t["kurallar"], s)))
+
+
 def _sonuc_isle(gun):
     try:
         import bulten_arsiv as ba
@@ -807,6 +846,7 @@ def main(argv=None):
     p.add_argument("--n", type=int, default=15, help="taktik başına en fazla satır")
     p.add_argument("--yakin", action="store_true")
     p.add_argument("--arsiv", action="store_true")
+    p.add_argument("--telegram", action="store_true", help="Telegram botu: yalnız bugünkü, şu an koşulu sağlayan maçlar (güncel oran), kısa çıktı")
     p.add_argument("--gun-geri", type=int, default=7)
     p.add_argument("--liste", action="store_true")
     p.add_argument("--kurallar", action="store_true")
@@ -858,6 +898,8 @@ def main(argv=None):
     if not tk:
         print("aktif taktik yok (--liste; --ad süzgeci ya da 'aktif: hayir' satırı)")
         return
+    if a.telegram:
+        return _tara_telegram(a, tk)
     (_tara_arsiv if a.arsiv else _tara_canli)(a, tk)
 
 

@@ -88,7 +88,7 @@ def response_for_update(update, allowed_user_ids):
     if command == "/taktikler":
         return run_cli(["taktik", "--liste"])
     if command == "/taktik":
-        cli_arguments = ["taktik"]
+        cli_arguments = ["taktik", "--telegram"]
         if arguments:
             cli_arguments.extend(["--ad", " ".join(arguments)])
         return run_cli(cli_arguments)
