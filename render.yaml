@@ -1,8 +1,8 @@
 services:
-  - type: worker
+  - type: web
     name: bwm-telegram-bot
     runtime: python
-    plan: starter
+    plan: free
     buildCommand: pip install -r requirements.txt && python -m unittest discover -s agents -p 'test_*.py'
     startCommand: python agents/telegram_bot.py
     autoDeploy: true

@@ -12,6 +12,7 @@ import os
 import re
 import sys
 import json
+import math
 import time
 import threading
 from concurrent.futures import ThreadPoolExecutor
@@ -20,6 +21,7 @@ from datetime import datetime
 import requests
 
 from dixon_coles_model import _similarity
+from enrich_stats import poisson_cdf
 
 sys.stdout.reconfigure(encoding="utf-8")
 
@@ -251,3 +253,108 @@ def save_cache(cache):
     os.makedirs(DATA_DIR, exist_ok=True)
     with open(os.path.join(DATA_DIR, "flash_stat_cache.json"), "w", encoding="utf-8") as f:
         json.dump(cache, f, ensure_ascii=False)
+
+
+# ------------------------------------------------------------------ İLK YARI (İY) istatistik katmanı (02.10.2026 eklendi)
+# match_stats() yalnız "Match" (tam mac) bolumunu okur ve ilk farkli SE'de durur -> tam-mac onbellegi/davranisi
+# DEGISMEDEN birakildi (geriye donuk uyumluluk, canli sistemi bozmamak icin). Asagidaki fonksiyonlar AYNI feed'i
+# (df_st_1_<mid>) AYRICA ceker ve "1st Half"/"2nd Half" bolumlerini de ayristirip KENDI onbellek dosyasina yazar.
+IY_CACHE_FILE = "flash_stat_iy_cache.json"
+
+
+def match_stats_periods(session, mid, cache):
+    """Bitmis bir macin TUM periyot istatistigi: {'Match':{ad:(ev,dep)}, '1st Half':{...}, '2nd Half':{...}}. Onbellekli (ayri dosya)."""
+    with _lock:
+        if mid in cache:
+            return cache[mid]
+    out, se = {}, None
+    for r in parse(feed(session, f"df_st_1_{mid}")):
+        if "SE" in r:
+            se = r["SE"]
+            out.setdefault(se, {})
+            continue
+        if se and "SG" in r and "SH" in r and r["SG"] not in out[se]:
+            out[se][r["SG"]] = (_num(r["SH"]), _num(r["SI"]))
+    with _lock:
+        cache[mid] = out
+    return out
+
+
+def team_agg_iy(session, rows, cache, n=LAST_N):
+    """Bir takimin son n bitmis macinin ILK YARI (1st Half) xG ortalamasi + son2/son(n) trend karsilastirmasi.
+    xG yoksa (eski/kucuk lig macı) o mac sayilmaz; hic xG yoksa None doner (BWM ilkesi: veri yoksa varsayim uretme)."""
+    games = [g for g in (_row(r) for r in rows) if g and g["side"] in ("home", "away")][:n]
+    if not games:
+        return None
+    with ThreadPoolExecutor(max_workers=WORKERS) as pool:
+        stats = list(pool.map(lambda g: match_stats_periods(session, g["id"], cache), games))
+    per_game, n_xg, xgf_sum, xga_sum = [], 0, 0.0, 0.0
+    for g, st in zip(games, stats):                      # games en yeniden eskiye sirali (Flashscore history sirasi)
+        mine, opp = (0, 1) if g["side"] == "home" else (1, 0)
+        iy = st.get("1st Half", {})
+        x = iy.get(STAT_KEYS["xg"])
+        if x and x[0] is not None and x[1] is not None:
+            n_xg += 1
+            xgf_sum += x[mine]; xga_sum += x[opp]
+            per_game.append(x[mine] + x[opp])             # bu macta IY toplam xG (iki takim)
+    if not n_xg:
+        return None
+    out = {"n": n_xg, "iy_xgf": xgf_sum / n_xg, "iy_xga": xga_sum / n_xg}
+    if len(per_game) >= 2:
+        son2 = sum(per_game[:2]) / 2
+        genel = sum(per_game) / len(per_game)
+        out["son2_iy_xg_toplam_ort"] = round(son2, 2)
+        out["genel_iy_xg_toplam_ort"] = round(genel, 2)
+        if son2 > genel * 1.10:
+            out["trend"] = "yükseliyor"
+        elif son2 < genel * 0.90:
+            out["trend"] = "düşüyor"
+        else:
+            out["trend"] = "sabit"
+    return out
+
+
+def load_cache_iy():
+    p = os.path.join(DATA_DIR, IY_CACHE_FILE)
+    if os.path.exists(p):
+        try:
+            with open(p, "r", encoding="utf-8") as f:
+                raw = json.load(f)
+            return {mid: {se: {n: tuple(v) for n, v in st.items()} for se, st in periods.items()} for mid, periods in raw.items()}
+        except Exception:
+            return {}
+    return {}
+
+
+def save_cache_iy(cache):
+    os.makedirs(DATA_DIR, exist_ok=True)
+    with open(os.path.join(DATA_DIR, IY_CACHE_FILE), "w", encoding="utf-8") as f:
+        json.dump(cache, f, ensure_ascii=False)
+
+
+def iy_gol_son6(session, fmatch, cache_iy):
+    """KLMB tarzi 'ILK YARI gol istatistigi' analizi: son 6 mac Flashscore 1.Yari xG'sinden basit Poisson
+    tahmini. DONUS: {ev, dep (team_agg_iy sozlukleri), p_iy15ust, p_iykg, lam_iy_toplam, seviye} ya da None
+    (iki takimdan biri icin de yeterli IY xG verisi yoksa -> BWM ilkesi: veri yoksa tahmin uretme).
+    Esik (seviye='yuksek' <-> p_iy15ust>=0.50) ILK SURUM, HENUZ KALIBRE DEGIL (bkz. CLAUDE.md/SKILL.md notu)."""
+    secs = history(session, fmatch["id"])
+    last = [(k, v) for k, v in secs.items() if k.startswith("Last matches")]
+    h_rows = a_rows = []
+    for k, rows in last:
+        name = k.split(":", 1)[1].strip()
+        if _similarity(name, fmatch["home"]) >= _similarity(name, fmatch["away"]):
+            if not h_rows:
+                h_rows = rows
+        elif not a_rows:
+            a_rows = rows
+    ev, dep = team_agg_iy(session, h_rows, cache_iy), team_agg_iy(session, a_rows, cache_iy)
+    if not ev or not dep:
+        return None
+    lam_ev = (ev["iy_xgf"] + dep["iy_xga"]) / 2           # basit karsilikli ortalama (ev hucum x dep savunma)
+    lam_dep = (dep["iy_xgf"] + ev["iy_xga"]) / 2
+    lam_top = lam_ev + lam_dep
+    p_iy15ust = 1 - poisson_cdf(1, lam_top)                # P(IY toplam gol >= 2)
+    p_iykg = (1 - math.exp(-lam_ev)) * (1 - math.exp(-lam_dep)) if lam_ev > 0 and lam_dep > 0 else 0.0
+    return {"ev": ev, "dep": dep, "lam_ev_iy": round(lam_ev, 2), "lam_dep_iy": round(lam_dep, 2),
+            "lam_top_iy": round(lam_top, 2), "p_iy15ust": round(p_iy15ust, 3), "p_iykg": round(p_iykg, 3),
+            "seviye": "yuksek" if p_iy15ust >= 0.50 else "orta"}

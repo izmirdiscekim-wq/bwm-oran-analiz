@@ -75,6 +75,10 @@
 "ad": "İlk Korneri Kim Kullanır",
 "st": 56
 },
+"225": {
+"ad": "Kırmızı Kart Olur Mu",
+"st": 17
+},
 "256": {
 "ad": "Deplasman Alt/Üst {0}",
 "st": 604
@@ -247,6 +251,10 @@
 "ad": "Deplasman Her İki Yarıyı Kazanır",
 "st": 72
 },
+"593": {
+"ad": "Penaltı Olur mu?",
+"st": 802
+},
 "599": {
 "ad": "2. Yarı Karşılıklı Gol",
 "st": 821
@@ -271,9 +279,81 @@
 "ad": "Oyuncu Gol Atar",
 "st": 12
 },
+"702": {
+"ad": "Oyuncu İlk Golü Atar",
+"st": 3
+},
+"703": {
+"ad": "Oyuncu Her İki Yarı Da Gol Atar (Uzt. Dahil)",
+"st": 788
+},
+"704": {
+"ad": "Oyuncu Hat-trick Yapar (Uzt. Dahil)",
+"st": 789
+},
+"705": {
+"ad": "Oyuncu Gol Atar Ve Takımı Kazanır (Uzt. Dahil)",
+"st": 790
+},
+"706": {
+"ad": "Oyuncu Kafa İle Gol Atar (Uzt. Dahil)",
+"st": 791
+},
+"707": {
+"ad": "Oyuncu Ceza Sahası Dışından Gol Atar (Uzt. Dahil)",
+"st": 792
+},
+"708": {
+"ad": "Oyuncu Frikikten Gol Atar (Uzt. Dahil)",
+"st": 793
+},
+"709": {
+"ad": "Oyuncu Kart Görür (Uzt. Dahil)",
+"st": 794
+},
+"710": {
+"ad": "Oyuncu Kırmızı Kart Görür (Uzt. Dahil)",
+"st": 795
+},
+"712": {
+"ad": "Oyuncu Asist Yapar (Uzt. Dahil)",
+"st": 797
+},
+"713": {
+"ad": "Oyuncu Gol Atar ve Asist Yapar (Uzt. Dahil)",
+"st": 798
+},
+"714": {
+"ad": "Oyuncu Kaleyi Bulan Şut Çeker (Uzt. Dahil)",
+"st": 799
+},
+"715": {
+"ad": "Oyuncu Özel Bahisleri (Uzt. Dahil)",
+"st": 820
+},
 "716": {
 "ad": "Karşılaşma Özel Bahisleri",
 "st": 830
+},
+"740": {
+"ad": "Oyuncu Şut Çeker (Uzt. Dahil)",
+"st": 852
+},
+"742": {
+"ad": "Oyuncu Faul Yapar (Uzt. Dahil)",
+"st": 854
+},
+"743": {
+"ad": "Oyuncu Ofsayta Düşer (Uzt. Dahil)",
+"st": 855
+},
+"764": {
+"ad": "Oyuncu Top Çalar (Uzt. Dahil)",
+"st": 858
+},
+"765": {
+"ad": "Oyuncu Gol Atar veya Asist Yapar (Uzt. Dahil)",
+"st": 859
 },
 "777": {
 "ad": "Maç Skoru",
@@ -302,6 +382,50 @@
 "801": {
 "ad": "1. Yarı ve 2. Yarıda Karşılıklı Gol Olur",
 "st": 866
+},
+"802": {
+"ad": "Oyuncu Gol Atar Çifte Şans (Uzt. Dahil)",
+"st": 889
+},
+"803": {
+"ad": "Kaleci Kurtarışı (Uzt. Dahil)",
+"st": 890
+},
+"805": {
+"ad": "Takım Şut",
+"st": 912
+},
+"806": {
+"ad": "Takım İsabetli Şut",
+"st": 913
+},
+"807": {
+"ad": "Takım Faul",
+"st": 914
+},
+"808": {
+"ad": "Takım Ofsayt",
+"st": 915
+},
+"871": {
+"ad": "Takım Kale Vuruşu",
+"st": 918
+},
+"872": {
+"ad": "Takım Taç Atışı",
+"st": 917
+},
+"885": {
+"ad": "Karşılaşma Kombo Bahisleri",
+"st": 937
+},
+"890": {
+"ad": "Oyuncu 2+ Gol Atar (Uzt.Dahil)",
+"st": 942
+},
+"893": {
+"ad": "Oyuncu Gol Atar veya Kart Görür (Uzt.Dahil)",
+"st": 945
 },
 "9": {
 "ad": "2. Yarı Sonucu",

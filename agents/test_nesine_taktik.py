@@ -115,7 +115,7 @@ class KuralTests(unittest.TestCase):
 class KayitTests(unittest.TestCase):
     def ns(self, **kw):
         d = dict(ekle=None, degistir=None, kapat=None, ac=None, sil=None, hedef=None, oyna=None, basari=None, not_=None,
-                 orijinal=None, kategori=None, spor=None, kural=None)
+                 orijinal=None, kategori=None, spor=None, kural=None, istatistik=None, aksiyon=None)
         d.update(kw)
         return argparse.Namespace(**d)
 

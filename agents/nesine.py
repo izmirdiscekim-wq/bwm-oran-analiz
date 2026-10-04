@@ -296,6 +296,27 @@ def _detay(soz, ev, a):
               + (", diğer: " + ", ".join(kalan[:10]) if kalan else "") + "  (hepsi: --tam | seçim: --pazar 1.yari,korner,...)")
 
 
+def _arsiv_goster(a):
+    """Canlı bülten çekmeden, data/arsiv/nesine_YYYYMMDD.json'daki KAYITLI son oranları gösterir (gerçek kapanış testi için)."""
+    import bulten_arsiv as ba
+    ymd = a.arsiv.replace("-", "")
+    gun = ba._load(ba._day_file("nesine", ymd), {"maclar": {}})
+    soz = _sozluk_yukle()
+    recs = sorted(gun["maclar"].values(), key=lambda r: r["kickoff"])
+    ks = [_norm(t) for t in a.takim.split(",")] if a.takim else []
+    gosterilen = 0
+    for r in recs:
+        if ks and not any(k in _norm(r["home"]) or k in _norm(r["away"]) for k in ks):
+            continue
+        ev = {"esd": datetime.fromisoformat(r["kickoff"]).timestamp(), "lig": r["league"], "hn": r["home"], "an": r["away"], "mk": r["son"]}
+        flag = "KAPANIŞA YAKIN" if r.get("cekim", 1) > 1 and not r.get("kapanis_oncesi", True) else ("son kayıt" if r.get("kapanis_oncesi", True) else "kapanış sonrası")
+        print(f"[{flag}, son çekim {r['son_cekim'][11:16]}, {r.get('cekim', 1)}x, kickoff {r['kickoff'][11:16]}]")
+        _detay(soz, ev, a)
+        gosterilen += 1
+    if not gosterilen:
+        print(f"nesine_{ymd}.json: eşleşen maç yok ({len(recs)} kayıtlı maç var)")
+
+
 # ---------------------------------------------------------------- komut
 def _saat_ok(esd, aralik):
     m = datetime.fromtimestamp(esd, TR)
@@ -335,7 +356,11 @@ def main(argv=None):
     p.add_argument("--yenile", action="store_true", help="önbelleği yok say, Nesine'den yeniden çek")
     p.add_argument("--kayitsiz", action="store_true", help="taze çekimi arşive yazma")
     p.add_argument("--sozluk-yenile", action="store_true", help="pazar adı sözlüğünü iddaa yapılandırmasından yeniden kur")
+    p.add_argument("--arsiv", help="YYYY-MM-DD: canlı çekim YAPMADAN o günün Nesine arşivinden (kayıtlı son/kapanış oranı) göster; --takim ile filtrele")
     a = p.parse_args(argv)
+
+    if a.arsiv:
+        return _arsiv_goster(a)
 
     veri, taze = bulten(a.yenile)
     soz = sozluk_guncelle(veri, zorla=a.sozluk_yenile)
