@@ -199,7 +199,9 @@ def otomatik_tara(token, allowed_user_ids):
     print("[TARAMA] Otomatik mac taramasi baslatildi...", flush=True)
     analyzed = load_analyzed()
     now = time.time()
-    veri, _ = taktik.N.bulten(True)
+    veri, taze = taktik.N.bulten(True)
+    if taze:
+        taktik.N._arsive_yaz(veri)
     adaylar = []
     for e in veri["olaylar"]:
         asama = radar_asamasi(e, now)
@@ -241,7 +243,9 @@ def acilis_raporu(token, hedef_ids, otomatik):
     tr = taktik.N.TR
     with _tracker_lock:
         tracker = load_tracker()
-        veri, _ = taktik.N.bulten(True)
+        veri, taze = taktik.N.bulten(True)
+        if taze:
+            taktik.N._arsive_yaz(veri)
         now = time.time()
         gonderilen = set(tracker["gonderilen"])
         if otomatik:

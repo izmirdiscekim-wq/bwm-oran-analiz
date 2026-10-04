@@ -79,6 +79,10 @@ class RadarSenaryoTests(unittest.TestCase):
     def setUp(self):
         import tempfile
         from pathlib import Path
+        import taktik
+        arsiv = patch.object(taktik.N, "_arsive_yaz")
+        arsiv.start()
+        self.addCleanup(arsiv.stop)
         self.kickoff = 1_000_000.0 + 3600
         self.dosya = Path(tempfile.mkdtemp()) / "analyzed.json"
         self.sent = []
@@ -111,6 +115,11 @@ class RadarSenaryoTests(unittest.TestCase):
 
 
 class AcilisRaporuTests(unittest.TestCase):
+    def setUp(self):
+        import taktik
+        arsiv = patch.object(taktik.N, "_arsive_yaz")
+        arsiv.start()
+        self.addCleanup(arsiv.stop)
     def test_acilis_raporu_sends_once_per_match(self):
         import tempfile
         import taktik
