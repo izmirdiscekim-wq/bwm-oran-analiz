@@ -63,20 +63,51 @@ class TelegramBotTests(unittest.TestCase):
                 telegram_bot.validate_bot_token("test-secret")
 
 
-    def test_asama_ilk_within_30_minutes_and_son15_within_15_minutes(self):
+    def test_radar_stages_are_60_30_and_15_minutes_before_kickoff(self):
         now = 1_000_000.0
-        self.assertIsNone(telegram_bot.asama({"esd": now + 31 * 60}, None, now))
-        self.assertEqual(telegram_bot.asama({"esd": now + 29 * 60}, None, now), "ilk")
-        self.assertIsNone(telegram_bot.asama({"esd": now - 60}, None, now))
-        rec = {"ilk_ts": now - 600, "son15_ts": None, "bildirilen": {}}
-        self.assertIsNone(telegram_bot.asama({"esd": now + 20 * 60}, rec, now))
-        self.assertEqual(telegram_bot.asama({"esd": now + 10 * 60}, rec, now), "son15")
-        rec["son15_ts"] = now - 60
-        self.assertIsNone(telegram_bot.asama({"esd": now + 10 * 60}, rec, now))
+        self.assertIsNone(telegram_bot.radar_asamasi({"esd": now + 61 * 60}, now))
+        self.assertEqual(telegram_bot.radar_asamasi({"esd": now + 60 * 60}, now), "60")
+        self.assertEqual(telegram_bot.radar_asamasi({"esd": now + 31 * 60}, now), "60")
+        self.assertEqual(telegram_bot.radar_asamasi({"esd": now + 30 * 60}, now), "30")
+        self.assertEqual(telegram_bot.radar_asamasi({"esd": now + 16 * 60}, now), "30")
+        self.assertEqual(telegram_bot.radar_asamasi({"esd": now + 15 * 60}, now), "15")
+        self.assertEqual(telegram_bot.radar_asamasi({"esd": now + 1}, now), "15")
+        self.assertIsNone(telegram_bot.radar_asamasi({"esd": now - 1}, now))
 
-    def test_kritik_degisim_threshold(self):
-        self.assertFalse(telegram_bot.kritik_degisim([2.00, 1.50], [2.04, 1.52]))
-        self.assertTrue(telegram_bot.kritik_degisim([2.00, 1.50], [2.12, 1.50]))
+
+class RadarSenaryoTests(unittest.TestCase):
+    def setUp(self):
+        import tempfile
+        from pathlib import Path
+        self.kickoff = 1_000_000.0 + 3600
+        self.dosya = Path(tempfile.mkdtemp()) / "analyzed.json"
+        self.sent = []
+
+    def calistir(self, scan_offsets_and_match):
+        import taktik
+        event = {"esd": self.kickoff, "esd_ms": 1, "hn": "A", "an": "B", "lig": "L"}
+        telegram_bot.ANALYZED_FILE = self.dosya
+        for kalan_dk, uyuyor in scan_offsets_and_match:
+            now = self.kickoff - kalan_dk * 60
+            maclar = {"k": (event, [({"ad": "T"}, [(1.0, True)], ["x"])])} if uyuyor else {}
+            with patch.object(telegram_bot.time, "time", return_value=now),                  patch.object(taktik.N, "bulten", return_value=({"olaylar": [event], "cekim": now}, True)),                  patch.object(taktik, "dosya_oku", return_value=(None, [{"aktif": True, "spor": "futbol", "kurallar": [1], "ad": "T"}])),                  patch.object(taktik, "telegram_adaylari", return_value=maclar),                  patch.object(taktik, "telegram_metni", side_effect=lambda m, c, b: b),                  patch.object(telegram_bot, "send_message", side_effect=lambda tok, uid, txt: self.sent.append(txt)):
+                telegram_bot.otomatik_tara("x", {1})
+        return self.sent
+
+    def test_no_at_60_yes_at_30_no_at_15_sends_only_30(self):
+        mesajlar = self.calistir([(58, False), (45, False), (30, True), (25, True), (20, False), (15, False)])
+        self.assertEqual(mesajlar, ["Maçın başlamasına yarım saat kaldı. Oran analize uyuyor."])
+
+    def test_no_at_60_no_at_30_yes_at_15_sends_only_15(self):
+        mesajlar = self.calistir([(58, False), (30, False), (25, False), (15, True), (10, True)])
+        self.assertEqual(mesajlar, ["Maçın başlamasına 15 dakika kaldı. Oran analize uyuyor."])
+
+    def test_yes_at_60_yes_at_30_yes_at_15_sends_three_messages_once_each(self):
+        mesajlar = self.calistir([(58, True), (55, True), (30, True), (27, True), (15, True), (10, True), (5, True)])
+        self.assertEqual(len(mesajlar), 3)
+        self.assertIn("1 saat", mesajlar[0])
+        self.assertIn("yarım saat", mesajlar[1])
+        self.assertIn("15 dakika", mesajlar[2])
 
 
 if __name__ == "__main__":
