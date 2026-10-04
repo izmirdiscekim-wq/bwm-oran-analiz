@@ -726,13 +726,14 @@ def telegram_adaylari(olaylar, taktikler, ilk_zorla=False):
     return maclar
 
 
-def telegram_metni(maclar, cekim_ts, baslik, oran_etiketi="güncel oran"):
+def telegram_metni(maclar, cekim_ts, baslik, oran_etiketi="güncel oran", tarihli=False):
     if not maclar:
         return "Bugün şu an taktiklere uyan maç yok"
     satirlar = [f"{baslik} ({oran_etiketi}, {datetime.fromtimestamp(cekim_ts, N.TR):%H:%M})"]
     for e, uyanlar in maclar.values():
         ms = N._mk(e, 1)
-        satirlar.append(f"\n{datetime.fromtimestamp(e['esd'], N.TR):%H:%M} · {e['lig']} · {e['hn']} - {e['an']}")
+        zaman = f"{datetime.fromtimestamp(e['esd'], N.TR):%d.%m %H:%M}" if tarihli else f"{datetime.fromtimestamp(e['esd'], N.TR):%H:%M}"
+        satirlar.append(f"\n{zaman} · {e['lig']} · {e['hn']} - {e['an']}")
         satirlar.append(f"MS {_fmt(ms.get('1'))}/{_fmt(ms.get('2'))}/{_fmt(ms.get('3'))}")
         for t, s, hedefler in uyanlar:
             oy = " / ".join(f"{o} {_oyna_deger(e, o)}" for o in hedefler)

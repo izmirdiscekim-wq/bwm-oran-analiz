@@ -9,6 +9,7 @@ import subprocess
 import sys
 import threading
 import time
+from datetime import datetime, time as dtime
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 import requests
@@ -227,7 +228,7 @@ def load_tracker():
     try:
         return json.loads(OPENING_TRACKER.read_text(encoding="utf-8"))
     except (OSError, ValueError):
-        return {"gonderilen": [], "son_surum": None}
+        return {"gonderilen": [], "son_gun": None}
 
 
 def save_tracker(tracker):
@@ -237,39 +238,50 @@ def save_tracker(tracker):
 def acilis_raporu(token, hedef_ids, otomatik):
     import taktik
 
+    tr = taktik.N.TR
     with _tracker_lock:
         tracker = load_tracker()
         veri, _ = taktik.N.bulten(True)
+        now = time.time()
         gonderilen = set(tracker["gonderilen"])
-        olaylar = [e for e in veri["olaylar"] if e["esd"] > time.time() and match_key(e) not in gonderilen]
+        if otomatik:
+            bugun = datetime.fromtimestamp(now, tr).date()
+            olaylar = [e for e in veri["olaylar"] if e["esd"] > now and datetime.fromtimestamp(e["esd"], tr).date() == bugun and match_key(e) not in gonderilen]
+        else:
+            olaylar = [e for e in veri["olaylar"] if e["esd"] > now]
         tum_taktikler = [t for t in taktik.dosya_oku()[1] if t["aktif"] and t.get("spor", "futbol") == "futbol" and t["kurallar"]]
         maclar = taktik.telegram_adaylari(olaylar, tum_taktikler, ilk_zorla=True) if olaylar else {}
         if maclar:
-            metin = taktik.telegram_metni(maclar, veri["cekim"], OPENING_TITLE, oran_etiketi="ilk görülen oran")
+            metin = taktik.telegram_metni(maclar, veri["cekim"], OPENING_TITLE, oran_etiketi="ilk görülen oran", tarihli=True)
             for user_id in hedef_ids:
                 send_message(token, user_id, metin)
-            tracker["gonderilen"] = sorted(gonderilen | {match_key(e) for e, _ in maclar.values()})
+            if otomatik:
+                tracker["gonderilen"] = sorted(gonderilen | {match_key(e) for e, _ in maclar.values()})
+                save_tracker(tracker)
         elif not otomatik:
             for user_id in hedef_ids:
                 send_message(token, user_id, "Açılış oranı analizine uyan yeni maç yok.")
-        tracker["son_surum"] = veri.get("surum")
-        save_tracker(tracker)
     print(f"[ACILIS] {len(maclar)} mac raporlandi (otomatik={otomatik})", flush=True)
 
 
 def acilis_dongu(token, allowed_user_ids):
     import taktik
 
+    tr = taktik.N.TR
     while True:
         try:
-            veri, _ = taktik.N.bulten(False)
+            simdi = datetime.fromtimestamp(time.time(), tr)
             with _tracker_lock:
-                son = load_tracker().get("son_surum")
-            if veri.get("surum") != son:
+                son_gun = load_tracker().get("son_gun")
+            if simdi.time() >= dtime(0, 1) and son_gun != simdi.date().isoformat():
                 acilis_raporu(token, allowed_user_ids, otomatik=True)
+                with _tracker_lock:
+                    tracker = load_tracker()
+                    tracker["son_gun"] = simdi.date().isoformat()
+                    save_tracker(tracker)
         except Exception as error:
             print(f"Açılış taraması hatası: {error}", file=sys.stderr, flush=True)
-        time.sleep(AUTO_INTERVAL_SECONDS)
+        time.sleep(60)
 
 
 def otomatik_dongu(token, allowed_user_ids):
