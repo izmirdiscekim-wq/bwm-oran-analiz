@@ -9,6 +9,7 @@ import subprocess
 import sys
 import threading
 import time
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 import requests
 
@@ -136,6 +137,24 @@ def validate_bot_token(token):
         raise SystemExit(f"Telegram API ön kontrolü başarısız: {error}") from None
 
 
+class HealthHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.send_header("Content-Type", "text/plain; charset=utf-8")
+        self.end_headers()
+        self.wfile.write(b"OK")
+
+    def log_message(self, format, *args):
+        pass
+
+
+def saglik_sunucusu_baslat():
+    port = int(os.environ.get("PORT", 10000))
+    server = ThreadingHTTPServer(("0.0.0.0", port), HealthHandler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    return server
+
+
 def match_key(event):
     return f"{event['esd_ms']}_{event['hn']}_{event['an']}"
 
@@ -195,6 +214,7 @@ def main():
     bot_info = validate_bot_token(token)
     print(f"Telegram botu doğrulandı: @{bot_info.get('username', 'kullanici-adi-yok')}", flush=True)
     offset = None
+    saglik_sunucusu_baslat()
     threading.Thread(target=otomatik_dongu, args=(token, allowed_user_ids), daemon=True).start()
     print("BWM Telegram botu çalışıyor.", flush=True)
     while True:
