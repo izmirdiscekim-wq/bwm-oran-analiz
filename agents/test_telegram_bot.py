@@ -110,5 +110,20 @@ class RadarSenaryoTests(unittest.TestCase):
         self.assertIn("15 dakika", mesajlar[2])
 
 
+class AcilisRaporuTests(unittest.TestCase):
+    def test_acilis_raporu_sends_once_per_match(self):
+        import tempfile
+        import taktik
+        from pathlib import Path
+        now = 1_000_000.0
+        event = {"esd": now + 3600, "esd_ms": 9, "hn": "A", "an": "B", "lig": "L"}
+        telegram_bot.OPENING_TRACKER = Path(tempfile.mkdtemp()) / "tracker.json"
+        sent = []
+        with patch.object(telegram_bot.time, "time", return_value=now),              patch.object(taktik.N, "bulten", return_value=({"olaylar": [event], "cekim": now, "surum": 1}, True)),              patch.object(taktik, "dosya_oku", return_value=(None, [{"aktif": True, "spor": "futbol", "kurallar": [1], "ad": "T"}])),              patch.object(taktik, "telegram_adaylari", return_value={"k": (event, [({"ad": "T"}, [(1.0, True)], ["x"])])}),              patch.object(taktik, "telegram_metni", side_effect=lambda m, c, b, oran_etiketi="": b),              patch.object(telegram_bot, "send_message", side_effect=lambda tok, uid, txt: sent.append(txt)):
+            telegram_bot.acilis_raporu("x", [1], otomatik=True)
+            telegram_bot.acilis_raporu("x", [1], otomatik=True)
+        self.assertEqual(sent, [telegram_bot.OPENING_TITLE])
+
+
 if __name__ == "__main__":
     unittest.main()

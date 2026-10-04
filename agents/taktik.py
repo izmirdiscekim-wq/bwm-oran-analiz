@@ -696,7 +696,14 @@ def _tara_canli(a, taktikler):
         _iz_yaz(a.iz_kaydet, iz_satirlari)
 
 
-def telegram_adaylari(olaylar, taktikler):
+def _ilk_gorunum(e, kaynak="nesine"):
+    mk = _ilk_mk(e, kaynak)
+    return {**e, "mk": mk} if mk else None
+
+
+def telegram_adaylari(olaylar, taktikler, ilk_zorla=False):
+    if ilk_zorla:
+        olaylar = [v for v in (_ilk_gorunum(e) for e in olaylar) if v]
     maclar = {}
     for t in taktikler:
         ks = t["kurallar"]
@@ -719,10 +726,10 @@ def telegram_adaylari(olaylar, taktikler):
     return maclar
 
 
-def telegram_metni(maclar, cekim_ts, baslik):
+def telegram_metni(maclar, cekim_ts, baslik, oran_etiketi="güncel oran"):
     if not maclar:
         return "Bugün şu an taktiklere uyan maç yok"
-    satirlar = [f"{baslik} (güncel oran, {datetime.fromtimestamp(cekim_ts, N.TR):%H:%M})"]
+    satirlar = [f"{baslik} ({oran_etiketi}, {datetime.fromtimestamp(cekim_ts, N.TR):%H:%M})"]
     for e, uyanlar in maclar.values():
         ms = N._mk(e, 1)
         satirlar.append(f"\n{datetime.fromtimestamp(e['esd'], N.TR):%H:%M} · {e['lig']} · {e['hn']} - {e['an']}")

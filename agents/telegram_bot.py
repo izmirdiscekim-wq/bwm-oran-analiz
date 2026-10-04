@@ -23,6 +23,10 @@ RADAR_ASAMALARI = (("60", 60 * 60, 30 * 60, "Maçın başlamasına 1 saat kaldı
                    ("15", 15 * 60, 0, "Maçın başlamasına 15 dakika kaldı. Oran analize uyuyor."))
 ANALYZED_FILE = AGENT_DIR / "analyzed_matches.json"
 TEST_TARA = "__test_tara__"
+TAKTIK_ACILIS = "__taktik_acilis__"
+OPENING_TRACKER = AGENT_DIR / "opening_sent_tracker.json"
+OPENING_TITLE = "🎯 Haftalık Bülten Açılış Oranları Analizi"
+_tracker_lock = threading.Lock()
 
 
 def parse_allowed_user_ids(value):
@@ -92,9 +96,11 @@ def response_for_update(update, allowed_user_ids):
         return "Komut biçimi okunamadı. /yardim yazın."
 
     if command in ("/start", "/yardim", "/help"):
-        return "Komutlar:\n/taktik - aktif oran taktiklerini Nesine bülteninde tara\n/taktik <ad> - adı verilen taktiği tara\n/taktikler - kayıtlı taktikleri listele"
+        return "Komutlar:\n/taktik - aktif oran taktiklerini Nesine bülteninde tara\n/taktik <ad> - adı verilen taktiği tara\n/taktikler - kayıtlı taktikleri listele\n/taktik_acilis - bültendeki açılış oranı taktik maçlarını raporla"
     if command == "/test_tara":
         return TEST_TARA
+    if command == "/taktik_acilis":
+        return TAKTIK_ACILIS
     if command == "/taktikler":
         return run_cli(["taktik", "--liste"])
     if command == "/taktik":
@@ -217,6 +223,55 @@ def otomatik_tara(token, allowed_user_ids):
     print(f"[TARAMA] {bildirim} mac bildirildi. ({len(adaylar)} aday mac, 60 dk penceresinde)", flush=True)
 
 
+def load_tracker():
+    try:
+        return json.loads(OPENING_TRACKER.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {"gonderilen": [], "son_surum": None}
+
+
+def save_tracker(tracker):
+    OPENING_TRACKER.write_text(json.dumps(tracker, ensure_ascii=False, indent=1), encoding="utf-8")
+
+
+def acilis_raporu(token, hedef_ids, otomatik):
+    import taktik
+
+    with _tracker_lock:
+        tracker = load_tracker()
+        veri, _ = taktik.N.bulten(True)
+        gonderilen = set(tracker["gonderilen"])
+        olaylar = [e for e in veri["olaylar"] if e["esd"] > time.time() and match_key(e) not in gonderilen]
+        tum_taktikler = [t for t in taktik.dosya_oku()[1] if t["aktif"] and t.get("spor", "futbol") == "futbol" and t["kurallar"]]
+        maclar = taktik.telegram_adaylari(olaylar, tum_taktikler, ilk_zorla=True) if olaylar else {}
+        if maclar:
+            metin = taktik.telegram_metni(maclar, veri["cekim"], OPENING_TITLE, oran_etiketi="ilk görülen oran")
+            for user_id in hedef_ids:
+                send_message(token, user_id, metin)
+            tracker["gonderilen"] = sorted(gonderilen | {match_key(e) for e, _ in maclar.values()})
+        elif not otomatik:
+            for user_id in hedef_ids:
+                send_message(token, user_id, "Açılış oranı analizine uyan yeni maç yok.")
+        tracker["son_surum"] = veri.get("surum")
+        save_tracker(tracker)
+    print(f"[ACILIS] {len(maclar)} mac raporlandi (otomatik={otomatik})", flush=True)
+
+
+def acilis_dongu(token, allowed_user_ids):
+    import taktik
+
+    while True:
+        try:
+            veri, _ = taktik.N.bulten(False)
+            with _tracker_lock:
+                son = load_tracker().get("son_surum")
+            if veri.get("surum") != son:
+                acilis_raporu(token, allowed_user_ids, otomatik=True)
+        except Exception as error:
+            print(f"Açılış taraması hatası: {error}", file=sys.stderr, flush=True)
+        time.sleep(AUTO_INTERVAL_SECONDS)
+
+
 def otomatik_dongu(token, allowed_user_ids):
     while True:
         try:
@@ -241,6 +296,7 @@ def main():
     print(f"Telegram botu doğrulandı: @{bot_info.get('username', 'kullanici-adi-yok')}", flush=True)
     offset = None
     threading.Thread(target=otomatik_dongu, args=(token, allowed_user_ids), daemon=True).start()
+    threading.Thread(target=acilis_dongu, args=(token, allowed_user_ids), daemon=True).start()
     print("BWM Telegram botu çalışıyor.", flush=True)
     while True:
         try:
@@ -252,6 +308,12 @@ def main():
             for update in updates:
                 offset = update["update_id"] + 1
                 reply = response_for_update(update, allowed_user_ids)
+                if reply == TAKTIK_ACILIS:
+                    try:
+                        acilis_raporu(token, [update["message"]["chat"]["id"]], otomatik=False)
+                        reply = None
+                    except Exception as error:
+                        reply = f"Açılış analizi hatası: {error}"
                 if reply == TEST_TARA:
                     try:
                         otomatik_tara(token, allowed_user_ids)
