@@ -63,5 +63,20 @@ class TelegramBotTests(unittest.TestCase):
                 telegram_bot.validate_bot_token("test-secret")
 
 
+    def test_auto_window_takes_only_matches_starting_within_30_minutes_and_not_analyzed(self):
+        now = 1_000_000.0
+        olaylar = [
+            {"esd": now + 29 * 60, "esd_ms": 1, "hn": "A", "an": "B"},
+            {"esd": now + 31 * 60, "esd_ms": 2, "hn": "C", "an": "D"},
+            {"esd": now - 60, "esd_ms": 3, "hn": "E", "an": "F"},
+            {"esd": now + 10 * 60, "esd_ms": 4, "hn": "G", "an": "H"},
+        ]
+        analyzed = {telegram_bot.match_key(olaylar[3])}
+
+        adaylar = telegram_bot.pencere_adaylari(olaylar, now, analyzed)
+
+        self.assertEqual([e["hn"] for e in adaylar], ["A"])
+
+
 if __name__ == "__main__":
     unittest.main()

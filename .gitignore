@@ -3,3 +3,4 @@ __pycache__/
 .env
 agents/data/tmp/
 *.bak
+analyzed_matches.json

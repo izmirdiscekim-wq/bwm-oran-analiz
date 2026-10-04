@@ -696,18 +696,13 @@ def _tara_canli(a, taktikler):
         _iz_yaz(a.iz_kaydet, iz_satirlari)
 
 
-def _tara_telegram(a, taktikler):
-    veri, _ = N.bulten(True)
-    if not a.kayitsiz:
-        N._arsive_yaz(veri)
-    now = time.time()
-    bugun = sorted((e for e in veri["olaylar"] if e["esd"] > now and N._gun_ok(e["esd"], "bugun")), key=lambda e: e["esd"])
+def telegram_adaylari(olaylar, taktikler):
     maclar = {}
     for t in taktikler:
         ks = t["kurallar"]
         if not ks or t.get("spor", "futbol") != "futbol":
             continue
-        for e in bugun:
+        for e in olaylar:
             s = degerlendir(e, ks)
             if not all(ok for _, ok in s):
                 continue
@@ -721,18 +716,31 @@ def _tara_telegram(a, taktikler):
     if _FLASH["cache_iy"] is not None:
         import fetch_flash as FF
         FF.save_cache_iy(_FLASH["cache_iy"])
+    return maclar
+
+
+def telegram_metni(maclar, cekim_ts, baslik):
     if not maclar:
-        print("Bugün şu an taktiklere uyan maç yok")
-        return
-    print(f"Bugün taktiklere uyan maçlar (güncel oran, {datetime.fromtimestamp(veri['cekim'], N.TR):%H:%M})")
+        return "Bugün şu an taktiklere uyan maç yok"
+    satirlar = [f"{baslik} (güncel oran, {datetime.fromtimestamp(cekim_ts, N.TR):%H:%M})"]
     for e, uyanlar in maclar.values():
         ms = N._mk(e, 1)
-        print(f"\n{datetime.fromtimestamp(e['esd'], N.TR):%H:%M} · {e['lig']} · {e['hn']} - {e['an']}")
-        print(f"MS {_fmt(ms.get('1'))}/{_fmt(ms.get('2'))}/{_fmt(ms.get('3'))}")
+        satirlar.append(f"\n{datetime.fromtimestamp(e['esd'], N.TR):%H:%M} · {e['lig']} · {e['hn']} - {e['an']}")
+        satirlar.append(f"MS {_fmt(ms.get('1'))}/{_fmt(ms.get('2'))}/{_fmt(ms.get('3'))}")
         for t, s, hedefler in uyanlar:
             oy = " / ".join(f"{o} {_oyna_deger(e, o)}" for o in hedefler)
-            print(f"• {t['ad']}: OYNA {oy}")
-            print("  " + " ".join(f"{_kural_etiket(k, _mk_icin(e, k))} {_fmt(v)}" for k, (v, _) in zip(t["kurallar"], s)))
+            satirlar.append(f"• {t['ad']}: OYNA {oy}")
+            satirlar.append("  " + " ".join(f"{_kural_etiket(k, _mk_icin(e, k))} {_fmt(v)}" for k, (v, _) in zip(t["kurallar"], s)))
+    return "\n".join(satirlar)
+
+
+def _tara_telegram(a, taktikler):
+    veri, _ = N.bulten(True)
+    if not a.kayitsiz:
+        N._arsive_yaz(veri)
+    now = time.time()
+    bugun = sorted((e for e in veri["olaylar"] if e["esd"] > now and N._gun_ok(e["esd"], "bugun")), key=lambda e: e["esd"])
+    print(telegram_metni(telegram_adaylari(bugun, taktikler), veri["cekim"], "Bugün taktiklere uyan maçlar"))
 
 
 def _sonuc_isle(gun):

@@ -7,6 +7,7 @@ import os
 import shlex
 import subprocess
 import sys
+import threading
 import time
 from pathlib import Path
 import requests
@@ -15,6 +16,9 @@ import requests
 AGENT_DIR = Path(__file__).resolve().parent
 MAX_MESSAGE_LENGTH = 3900
 SCAN_TIMEOUT_SECONDS = 480
+AUTO_INTERVAL_SECONDS = 30 * 60
+AUTO_WINDOW_SECONDS = 30 * 60
+ANALYZED_FILE = AGENT_DIR / "analyzed_matches.json"
 
 
 def parse_allowed_user_ids(value):
@@ -132,6 +136,52 @@ def validate_bot_token(token):
         raise SystemExit(f"Telegram API ön kontrolü başarısız: {error}") from None
 
 
+def match_key(event):
+    return f"{event['esd_ms']}_{event['hn']}_{event['an']}"
+
+
+def pencere_adaylari(olaylar, now, analyzed):
+    return [e for e in olaylar if 0 < e["esd"] - now <= AUTO_WINDOW_SECONDS and match_key(e) not in analyzed]
+
+
+def load_analyzed():
+    try:
+        return set(json.loads(ANALYZED_FILE.read_text(encoding="utf-8")))
+    except (OSError, ValueError):
+        return set()
+
+
+def save_analyzed(analyzed):
+    ANALYZED_FILE.write_text(json.dumps(sorted(analyzed), ensure_ascii=False, indent=1), encoding="utf-8")
+
+
+def otomatik_tara(token, allowed_user_ids):
+    import taktik
+
+    analyzed = load_analyzed()
+    veri, _ = taktik.N.bulten(True)
+    adaylar = pencere_adaylari(veri["olaylar"], time.time(), analyzed)
+    if not adaylar:
+        return
+    tum_taktikler = [t for t in taktik.dosya_oku()[1] if t["aktif"] and t.get("spor", "futbol") == "futbol" and t["kurallar"]]
+    maclar = taktik.telegram_adaylari(adaylar, tum_taktikler)
+    if maclar:
+        metin = taktik.telegram_metni(maclar, veri["cekim"], "OTOMATİK: başlamasına 30 dk veya daha az kalan taktik maçları")
+        for user_id in allowed_user_ids:
+            send_message(token, user_id, metin)
+    analyzed.update(match_key(e) for e in adaylar)
+    save_analyzed(analyzed)
+
+
+def otomatik_dongu(token, allowed_user_ids):
+    while True:
+        try:
+            otomatik_tara(token, allowed_user_ids)
+        except Exception as error:
+            print(f"Otomatik tarama hatası: {error}", file=sys.stderr, flush=True)
+        time.sleep(AUTO_INTERVAL_SECONDS)
+
+
 def main():
     token = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
     allowed_ids = os.environ.get("TELEGRAM_ALLOWED_USER_IDS", "").strip()
@@ -145,6 +195,7 @@ def main():
     bot_info = validate_bot_token(token)
     print(f"Telegram botu doğrulandı: @{bot_info.get('username', 'kullanici-adi-yok')}", flush=True)
     offset = None
+    threading.Thread(target=otomatik_dongu, args=(token, allowed_user_ids), daemon=True).start()
     print("BWM Telegram botu çalışıyor.", flush=True)
     while True:
         try:
