@@ -19,6 +19,7 @@ MAX_MESSAGE_LENGTH = 3900
 SCAN_TIMEOUT_SECONDS = 480
 AUTO_INTERVAL_SECONDS = 30 * 60
 AUTO_WINDOW_SECONDS = 30 * 60
+TEST_TARA = "__test_tara__"
 ANALYZED_FILE = AGENT_DIR / "analyzed_matches.json"
 
 
@@ -90,6 +91,8 @@ def response_for_update(update, allowed_user_ids):
 
     if command in ("/start", "/yardim", "/help"):
         return "Komutlar:\n/taktik - aktif oran taktiklerini Nesine bülteninde tara\n/taktik <ad> - adı verilen taktiği tara\n/taktikler - kayıtlı taktikleri listele"
+    if command == "/test_tara":
+        return TEST_TARA
     if command == "/taktikler":
         return run_cli(["taktik", "--liste"])
     if command == "/taktik":
@@ -180,19 +183,21 @@ def save_analyzed(analyzed):
 def otomatik_tara(token, allowed_user_ids):
     import taktik
 
+    print("[TARAMA] Otomatik mac taramasi baslatildi...", flush=True)
     analyzed = load_analyzed()
     veri, _ = taktik.N.bulten(True)
     adaylar = pencere_adaylari(veri["olaylar"], time.time(), analyzed)
-    if not adaylar:
-        return
-    tum_taktikler = [t for t in taktik.dosya_oku()[1] if t["aktif"] and t.get("spor", "futbol") == "futbol" and t["kurallar"]]
-    maclar = taktik.telegram_adaylari(adaylar, tum_taktikler)
+    maclar = {}
+    if adaylar:
+        tum_taktikler = [t for t in taktik.dosya_oku()[1] if t["aktif"] and t.get("spor", "futbol") == "futbol" and t["kurallar"]]
+        maclar = taktik.telegram_adaylari(adaylar, tum_taktikler)
     if maclar:
         metin = taktik.telegram_metni(maclar, veri["cekim"], "OTOMATİK: başlamasına 30 dk veya daha az kalan taktik maçları")
         for user_id in allowed_user_ids:
             send_message(token, user_id, metin)
     analyzed.update(match_key(e) for e in adaylar)
     save_analyzed(analyzed)
+    print(f"[TARAMA] {len(maclar)} mac tarandi. ({len(adaylar)} mac pencerede, taktige uyan {len(maclar)})", flush=True)
 
 
 def otomatik_dongu(token, allowed_user_ids):
@@ -230,6 +235,12 @@ def main():
             for update in updates:
                 offset = update["update_id"] + 1
                 reply = response_for_update(update, allowed_user_ids)
+                if reply == TEST_TARA:
+                    try:
+                        otomatik_tara(token, allowed_user_ids)
+                        reply = "Manuel tarama tamamlandı, logları kontrol edin."
+                    except Exception as error:
+                        reply = f"Manuel tarama hatası: {error}"
                 if reply:
                     chat_id = update["message"]["chat"]["id"]
                     send_message(token, chat_id, reply)
