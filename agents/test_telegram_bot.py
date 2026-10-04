@@ -63,19 +63,20 @@ class TelegramBotTests(unittest.TestCase):
                 telegram_bot.validate_bot_token("test-secret")
 
 
-    def test_auto_window_takes_only_matches_starting_within_30_minutes_and_not_analyzed(self):
+    def test_asama_ilk_within_30_minutes_and_son15_within_15_minutes(self):
         now = 1_000_000.0
-        olaylar = [
-            {"esd": now + 29 * 60, "esd_ms": 1, "hn": "A", "an": "B"},
-            {"esd": now + 31 * 60, "esd_ms": 2, "hn": "C", "an": "D"},
-            {"esd": now - 60, "esd_ms": 3, "hn": "E", "an": "F"},
-            {"esd": now + 10 * 60, "esd_ms": 4, "hn": "G", "an": "H"},
-        ]
-        analyzed = {telegram_bot.match_key(olaylar[3])}
+        self.assertIsNone(telegram_bot.asama({"esd": now + 31 * 60}, None, now))
+        self.assertEqual(telegram_bot.asama({"esd": now + 29 * 60}, None, now), "ilk")
+        self.assertIsNone(telegram_bot.asama({"esd": now - 60}, None, now))
+        rec = {"ilk_ts": now - 600, "son15_ts": None, "bildirilen": {}}
+        self.assertIsNone(telegram_bot.asama({"esd": now + 20 * 60}, rec, now))
+        self.assertEqual(telegram_bot.asama({"esd": now + 10 * 60}, rec, now), "son15")
+        rec["son15_ts"] = now - 60
+        self.assertIsNone(telegram_bot.asama({"esd": now + 10 * 60}, rec, now))
 
-        adaylar = telegram_bot.pencere_adaylari(olaylar, now, analyzed)
-
-        self.assertEqual([e["hn"] for e in adaylar], ["A"])
+    def test_kritik_degisim_threshold(self):
+        self.assertFalse(telegram_bot.kritik_degisim([2.00, 1.50], [2.04, 1.52]))
+        self.assertTrue(telegram_bot.kritik_degisim([2.00, 1.50], [2.12, 1.50]))
 
 
 if __name__ == "__main__":

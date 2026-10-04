@@ -17,8 +17,10 @@ import requests
 AGENT_DIR = Path(__file__).resolve().parent
 MAX_MESSAGE_LENGTH = 3900
 SCAN_TIMEOUT_SECONDS = 480
-AUTO_INTERVAL_SECONDS = 30 * 60
-AUTO_WINDOW_SECONDS = 30 * 60
+AUTO_INTERVAL_SECONDS = 5 * 60
+AUTO_ILK_SECONDS = 30 * 60
+AUTO_SON_SECONDS = 15 * 60
+KRITIK_DEGISIM_ORANI = 0.05
 TEST_TARA = "__test_tara__"
 ANALYZED_FILE = AGENT_DIR / "analyzed_matches.json"
 
@@ -165,19 +167,33 @@ def match_key(event):
     return f"{event['esd_ms']}_{event['hn']}_{event['an']}"
 
 
-def pencere_adaylari(olaylar, now, analyzed):
-    return [e for e in olaylar if 0 < e["esd"] - now <= AUTO_WINDOW_SECONDS and match_key(e) not in analyzed]
+def asama(event, rec, now):
+    kalan = event["esd"] - now
+    if not 0 < kalan <= AUTO_ILK_SECONDS:
+        return None
+    if rec is None:
+        return "ilk"
+    if kalan <= AUTO_SON_SECONDS and rec.get("son15_ts") is None:
+        return "son15"
+    return None
+
+
+def kritik_degisim(eski, yeni):
+    return any(x and abs(y - x) / abs(x) >= KRITIK_DEGISIM_ORANI for x, y in zip(eski, yeni))
 
 
 def load_analyzed():
     try:
-        return set(json.loads(ANALYZED_FILE.read_text(encoding="utf-8")))
+        veri = json.loads(ANALYZED_FILE.read_text(encoding="utf-8"))
     except (OSError, ValueError):
-        return set()
+        return {}
+    if isinstance(veri, list):
+        return {k: {"ilk_ts": 0, "son15_ts": 0, "bildirilen": {}} for k in veri}
+    return veri
 
 
 def save_analyzed(analyzed):
-    ANALYZED_FILE.write_text(json.dumps(sorted(analyzed), ensure_ascii=False, indent=1), encoding="utf-8")
+    ANALYZED_FILE.write_text(json.dumps(analyzed, ensure_ascii=False, indent=1), encoding="utf-8")
 
 
 def otomatik_tara(token, allowed_user_ids):
@@ -185,19 +201,55 @@ def otomatik_tara(token, allowed_user_ids):
 
     print("[TARAMA] Otomatik mac taramasi baslatildi...", flush=True)
     analyzed = load_analyzed()
+    now = time.time()
     veri, _ = taktik.N.bulten(True)
-    adaylar = pencere_adaylari(veri["olaylar"], time.time(), analyzed)
-    maclar = {}
-    if adaylar:
-        tum_taktikler = [t for t in taktik.dosya_oku()[1] if t["aktif"] and t.get("spor", "futbol") == "futbol" and t["kurallar"]]
-        maclar = taktik.telegram_adaylari(adaylar, tum_taktikler)
-    if maclar:
-        metin = taktik.telegram_metni(maclar, veri["cekim"], "OTOMATİK: başlamasına 30 dk veya daha az kalan taktik maçları")
+    tum_taktikler = [t for t in taktik.dosya_oku()[1] if t["aktif"] and t.get("spor", "futbol") == "futbol" and t["kurallar"]]
+    ilk_olaylar, son_olaylar = [], []
+    for e in veri["olaylar"]:
+        a = asama(e, analyzed.get(match_key(e)), now)
+        if a == "ilk":
+            ilk_olaylar.append(e)
+        elif a == "son15":
+            son_olaylar.append(e)
+    ilk_maclar = taktik.telegram_adaylari(ilk_olaylar, tum_taktikler) if ilk_olaylar else {}
+    son_ham = taktik.telegram_adaylari(son_olaylar, tum_taktikler) if son_olaylar else {}
+
+    yeni_maclar, sondakika_maclar = {}, {}
+    for k, (e, uyanlar) in son_ham.items():
+        rec = analyzed.get(match_key(e), {})
+        for t, s, hedefler in uyanlar:
+            degerler = [v for v, _ in s]
+            onceki = rec.get("bildirilen", {}).get(t["ad"])
+            if onceki is None:
+                yeni_maclar.setdefault(k, (e, []))[1].append((t, s, hedefler))
+            elif kritik_degisim(onceki, degerler):
+                sondakika_maclar.setdefault(k, (e, []))[1].append((t, s, hedefler))
+    yeni_maclar = {**ilk_maclar, **yeni_maclar}
+
+    cekim = veri["cekim"]
+    if yeni_maclar:
+        metin = taktik.telegram_metni(yeni_maclar, cekim, "OTOMATİK: taktik maçları")
         for user_id in allowed_user_ids:
             send_message(token, user_id, metin)
-    analyzed.update(match_key(e) for e in adaylar)
+    if sondakika_maclar:
+        metin = taktik.telegram_metni(sondakika_maclar, cekim, "⚠️ Oran Güncellendi / Son Dakika Analizi")
+        for user_id in allowed_user_ids:
+            send_message(token, user_id, metin)
+
+    for e in ilk_olaylar:
+        rec = analyzed.setdefault(match_key(e), {"ilk_ts": now, "son15_ts": None, "bildirilen": {}})
+        if e["esd"] - now <= AUTO_SON_SECONDS:
+            rec["son15_ts"] = now
+    for e in son_olaylar:
+        rec = analyzed.setdefault(match_key(e), {"ilk_ts": now, "son15_ts": None, "bildirilen": {}})
+        rec["son15_ts"] = now
+    for maclar in (yeni_maclar, sondakika_maclar):
+        for e, uyanlar in maclar.values():
+            rec = analyzed[match_key(e)]
+            for t, s, _ in uyanlar:
+                rec["bildirilen"][t["ad"]] = [v for v, _ in s]
     save_analyzed(analyzed)
-    print(f"[TARAMA] {len(maclar)} mac tarandi. ({len(adaylar)} mac pencerede, taktige uyan {len(maclar)})", flush=True)
+    print(f"[TARAMA] {len(yeni_maclar) + len(sondakika_maclar)} mac tarandi. (ilk {len(ilk_olaylar)}, son15 {len(son_olaylar)} aday; bildirim {len(yeni_maclar)} yeni, {len(sondakika_maclar)} son dakika)", flush=True)
 
 
 def otomatik_dongu(token, allowed_user_ids):
