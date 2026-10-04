@@ -14,10 +14,19 @@
 #   @kod ad = t<MTID>[/SOV]/<N>     özel pazar kodu (ör. @kod tg6 = t43/4  # Toplam Gol 6+)
 #   iygolfav <aralık>               favoriye göre değişen kural: MS'de düşük oranlı taraf ev ise İY1&1.5Ü, deplasman ise İY2&1.5Ü kullanılır
 #   msfav / msalt <aralık>          favori / favori-olmayan takımın MS oranı (favori = MS'de düşük oranlı taraf)
+#   fark <kod1> <kod2> <aralık>     korelasyon kuralı: |oran(kod1) - oran(kod2)| aralığa uymalı (ör. fark skor22 tg6 <=0.60); @ilk/favori kodlarıyla birlikte kullanılamaz
+#   istatistik: iy_gol_son6          2. AŞAMA (02.10.2026 eklendi, "KLMB" tarzı): yukarıdaki <kod> kuralları (1. aşama, oran filtresi) GEÇEN
+#                                    maçlar için Flashscore'dan son 6 maçın İLK YARI xG'sini çeker, Poisson ile P(İY 1,5 Üst)/P(İY KG Var) hesaplar.
+#                                    Yalnız oran filtresini geçen (genelde <20) maça uygulanır — tüm bülteni ağdan çekmez, hızlı kalır. Henüz KALİBRE
+#                                    DEĞİL (eşik p>=0.50, ilk sürüm); --kodlar'da analizör/seviye listesi.
+#   aksiyon: seviye1:kod1,kod2;...   istatistik sonucuna göre hedef dallanması (istatistik: ile birlikte zorunlu); seviyeler analizöre göre değişir
+#                                    (iy_gol_son6 → yuksek/orta). Ör: "yuksek:iyu15,iykg;orta:u25,u35"
 # Her taktik taraması otomatik 2 liste verir: KAPANIŞ (kickoff'a ≤20 dk, hedef 5-10 dk) ve GÜNCEL (kapanış öncesi, oran değişebilir); ayrı alan gerekmez.
 # Kodlar: bwm.py taktik --kodlar   |   '#' sonrası yorumdur.
 @kod skor51 = t777/11        # Maç Skoru: 5:1
+@kod skor22 = t777/15        # Maç Skoru: 2:2
 @kod iy1kgvar = t416/1       # 1. Yarı Sonucu ve İlk Yarı Karşılıklı Gol: 1 ve Var
+@kod iyres1 = t7/1           # 1. Yarı Sonucu: 1 (ev sahibi önde)
 @kod iyres2 = t7/3           # 1. Yarı Sonucu: 2 (deplasman önde)
 @kod ms1u35 = t272/3.5/4     # Maç Sonucu ve Alt/Üst 3.5: 1 ve Üst
 
@@ -76,17 +85,6 @@ tg6            8.60-8.84   # 6+ Gol
 ykg2           2.90-3.12   # İkinci Yarı Karşılıklı Gol Var
 ciftu15        3.80-4.20   # İki yarıda da 1,5 Üst: Evet
 
-[5-1 Maç Sonu Kesin Skor]
-kategori: Oran Analizi
-eklendi: 2026-09-22
-hedef: Maç sonu tam 5-1 skor
-oyna: skor51
-basari: ev==5 and dep==1
-orijinal: 5-1 skor oranı 11.80-12.90; 1. Yarı 1 ve Var oranı 5.30-5.52; 1. Yarı KG Var oranı 3.30-3.58; maçın 5-1 bitmesi hedeflenir
-skor51         11.80-12.90
-iy1kgvar       5.30-5.52  
-iykg           3.30-3.58  
-
 [2/1 Sürpriz]
 kategori: Oran Analizi
 eklendi: 2026-09-22
@@ -127,3 +125,100 @@ basari: (iydep>iyev and ev>dep) or (iyev>iydep and dep>ev)
 orijinal: Oran takibiyle 2/1 (İY2/MS1) ve 1/2 (İY1/MS2) skorlarını yakalama taktiği. Favori takım oranı 1.60-1.69 arasında; favori olmayan (diğer) takım oranı sabit 4.50 veya 4.70-4.80 aralığında olmalı
 msfav          1.60-1.69  
 msalt          4.45-4.55|4.70-4.80
+
+[2:2 / +6 Gol Korelasyonu]
+kategori: Oran Analizi
+eklendi: 2026-10-01
+hedef: Karşılıklı Gol Var (2-2 Skor Oranı ile +6 Gol Oranı birbirine yakınsa)
+oyna: kgvar
+basari: kg
+not: Risk derecelendirmesi: fark 0'a yaklaştıkça KG Var güven puanı yükselir (EV garantisi değil, oranlar hâlâ aynı marjın içinde). Kullanıcının hedefi kickoff'tan ~1 saat önceki oran; sistemde bu taktiğe özel ayrı bir T-60dk penceresi yok, tüm taktikler gibi genel KAPANIŞ (kickoff'a <=20dk) / GÜNCEL ayrımıyla raporlanır - maça 50-70 dk kala yeniden taranması en isabetli an.
+orijinal: TAKTİK FİLTRESİ: 2:2 / +6 GOL KORELASYONU. Kural: Maç başlamadan 1 saat önceki oranlar kontrol edilir. Koşul: |(2-2 Skor Oranı) - (+6 Gol Oranı)| <= 0.60 (oranlar birbirine çok yakın/denk olmalı). Aksiyon: koşul sağlanıyorsa ana seçim KG VAR değerlendirilir. Risk derecelendirmesi: oranlar arası fark daraldıkça KG VAR güven oranı yükselir.
+fark skor22 tg6 0.00-0.60   # 2-2 Skor Oranı ile +6 Gol Oranı arasındaki fark
+
+[KLMB Formulu - IY 1 Altin Oran ve IY Gol Korelasyonu]
+kategori: Oran Analizi
+eklendi: 2026-10-02
+hedef: Oran filtresi gecerse Flashscore IY istatistigine gore dallanir: yuksekse IY 1,5 Ust / IY KG Var, orta/temkinliyse MS 2,5 Ust / 3,5 Ust
+istatistik: iy_gol_son6
+aksiyon: yuksek:iyu15,iykg;orta:u25,u35
+aktif: hayir
+orijinal: [TAKTIK FILTRESI: KLMB FORMULU - IY 1 ALTIN ORAN & IY GOL KORELASYONU] ADIM1: Ilk Yari Sonucu 1 orani su araliklardan birine uymali: 2.44-2.45|2.28-2.29|2.54-2.55|2.05-2.06|2.24-2.25|2.65-2.66|2.98-2.99, yoksa elenir. ADIM2: Ev/Dep son 6 mac IY 1.5Ust yuzdesi + son 2 mac trend. ADIM3: IY gol istatistigi yuksekse -> IY1.5Ust veya IYKGVAR; orta/temkinli ise -> MS 2.5Ust veya 3.5Ust.
+iyres1         2.44-2.45|2.28-2.29|2.54-2.55|2.05-2.06|2.24-2.25|2.65-2.66|2.98-2.99
+
+[İY-MS Korelasyon A (KG Var)]
+kategori: Oran Analizi
+eklendi: 2026-10-02
+hedef: İY/MS favori-kaybeder 20.00-20.99 + 0-1Gol 4.00-4.99 + 6+Gol 7.00-7.99 -> KG Var
+oyna: kgvar
+basari: top>=3
+orijinal: DUMMY CASE 1: Oran_X 20-20.99, +6Gol 7-7.99 ve 0-1Gol 4-4.99 ise KG VAR
+iymsfav        20.00-20.99
+tg01           4.00-4.99  
+tg6            7.00-7.99  
+
+[İY-MS Korelasyon B1 (3.5Üst-0-1gol)]
+kategori: Oran Analizi
+eklendi: 2026-10-02
+hedef: İY/MS favori-kaybeder 21.00-21.99 + 0-1Gol 5.00-5.99 -> 3.5 Üst
+oyna: u35
+basari: top>=3
+orijinal: DUMMY CASE 2: Oran_X 21-21.99, 0-1Gol 5-5.99 ise 3.5 Gol Üstü
+iymsfav        21.00-21.99
+tg01           5.00-5.99  
+
+[İY-MS Korelasyon B2 (3.5Üst-6gol)]
+kategori: Oran Analizi
+eklendi: 2026-10-02
+hedef: İY/MS favori-kaybeder 21.00-21.99 + 6+Gol 6.00-6.99 -> 3.5 Üst
+oyna: u35
+basari: top>=3
+orijinal: DUMMY CASE 2: Oran_X 21-21.99, +6Gol 6-6.99 ise 3.5 Gol Üstü
+iymsfav        21.00-21.99
+tg6            6.00-6.99  
+
+[İY-MS Korelasyon B3 (2.5Alt)]
+kategori: Oran Analizi
+eklendi: 2026-10-02
+hedef: İY/MS favori-kaybeder 21.00-21.99 + 6+Gol 7.00-7.99 -> 2.5 Alt
+oyna: a25
+basari: top<=2
+orijinal: DUMMY CASE 2: Oran_X 21-21.99, +6Gol 7-7.99 ise 2.5 Gol Altı
+iymsfav        21.00-21.99
+tg6            7.00-7.99  
+
+[İY-MS Korelasyon C2 (2.5Üst)]
+kategori: Oran Analizi
+eklendi: 2026-10-02
+hedef: İY/MS favori-kaybeder 22.00-22.99 + 6+Gol 8.00-9.99 -> 2.5 Üst
+oyna: u25
+basari: top>=3
+orijinal: DUMMY CASE 3: Oran_X 22-22.99, +6Gol 8-9.99 ise 2.5 Gol Üstü
+iymsfav        22.00-22.99
+tg6            8.00-9.99  
+
+[Kapanış 5-Koşul İY 1.5 Üst (Ev)]
+kategori: Oran Analizi
+eklendi: 2026-10-03
+hedef: 2.5Ü+KGVar 1.70-1.80 + İY2.5Ü 5.00-5.50 + Ev İY0.5Ü 2.00-2.20 + TopGol0-1 4.05-4.30 + İY&2Y KGVar/Var 11.75-12.00 -> İY 1.5 Üst
+oyna: iyu15
+basari: iytop>=2
+orijinal: KAPANIŞ ORANLARI İLE İY 1.5 ÜST: 5 koşul (2.5Ü+KGVar, İY2.5Ü, Ev/Dep İY0.5Ü, TopGol0-1, İY+2Y KGVar/Var) hepsi sağlanırsa İY 1.5 Üst
+u25kg          1.70-1.80  
+iyu25          5.00-5.50  
+eviyu05        2.00-2.20  
+tg01           4.05-4.30  
+iy2ykg         11.75-12.00
+
+[Kapanış 5-Koşul İY 1.5 Üst (Dep)]
+kategori: Oran Analizi
+eklendi: 2026-10-03
+hedef: 2.5Ü+KGVar 1.70-1.80 + İY2.5Ü 5.00-5.50 + Dep İY0.5Ü 2.00-2.20 + TopGol0-1 4.05-4.30 + İY&2Y KGVar/Var 11.75-12.00 -> İY 1.5 Üst
+oyna: iyu15
+basari: iytop>=2
+orijinal: KAPANIŞ ORANLARI İLE İY 1.5 ÜST: 5 koşul (2.5Ü+KGVar, İY2.5Ü, Ev/Dep İY0.5Ü, TopGol0-1, İY+2Y KGVar/Var) hepsi sağlanırsa İY 1.5 Üst
+u25kg          1.70-1.80  
+iyu25          5.00-5.50  
+depiyu05       2.00-2.20  
+tg01           4.05-4.30  
+iy2ykg         11.75-12.00

@@ -1,0 +1,13 @@
+services:
+  - type: worker
+    name: bwm-telegram-bot
+    runtime: python
+    plan: starter
+    buildCommand: pip install -r requirements.txt && python -m unittest discover -s agents -p 'test_*.py'
+    startCommand: python agents/telegram_bot.py
+    autoDeploy: true
+    envVars:
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: TELEGRAM_ALLOWED_USER_IDS
+        sync: false

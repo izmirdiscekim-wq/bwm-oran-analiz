@@ -13,6 +13,8 @@ başlamamış maçlara uygular. Kurallar KOD DEĞİL, düzenlenebilir metin dosy
 --ekle/--degistir/--ac sonrası o taktik hemen taranır (tek komut = kaydet + sonuç). Her yazma öncesi taktikler.txt.bak yedeği alınır.
 Özel pazar kodu: dosyada `@kod ad = t<MTID>[/SOV]/<N>  # açıklama` satırı (kod değişikliği gerekmez).
 Favoriye göre değişen kural (MS'de düşük oranlı taraf): `iygolfav <aralık>` = ev favoriyse İY1&1.5Ü, deplasman favoriyse İY2&1.5Ü; `msfav`/`msalt <aralık>` = favori/favori-olmayan takımın MS oranı (--kodlar).
+Korelasyon kuralı (iki pazarın oranı birbirine YAKIN olmalı): `fark <kod1> <kod2> <aralık>` -> |oran(kod1) - oran(kod2)| aralığa uymalı (ör. `fark skor22 tg6 <=0.60`); @ilk/favoriye-göre kodlarla birlikte kullanılamaz.
+Kapalı pazar kuralı (pazar AÇIK OLMAMALI/oran yok): `kapali <kod>` -> kural, pazar Nesine'de yoksa (v=None) geçer; pazar açıksa (bir değer varsa) geçmez ve gerçek oranı gösterir.
 Aralık VEYA: `4.45-4.55|4.70-4.80` (herhangi biri sağlanırsa kural geçer); `=X` ±0.05 tolerans alır (oranlar tam basılmayabilir).
 Her taktik taraması otomatik 2 liste verir: KAPANIŞ (kickoff'a ≤20 dk kalan güncel oran) ve GÜNCEL (kapanış öncesi, oran değişebilir); ayrı bir bayrak/alan gerekmez, tüm taktikler için geçerlidir.
 Spor: `spor: futbol|basketbol` (varsayılan futbol; --ekle/--degistir --spor basketbol). Basketbol pazar kodları "b" önekli (--kodlar; bms1, bhcp1, btsu ...),
@@ -34,12 +36,14 @@ SCRIPT_DIR = N.SCRIPT_DIR
 DOSYA = os.path.normpath(os.path.join(SCRIPT_DIR, "..", "skills", "bwm-taktik-tara", "taktikler.txt"))
 ARSIV = os.path.join(SCRIPT_DIR, "data", "arsiv")
 KATEGORI = "Oran Analizi"
-ANAHTAR = ("kategori", "spor", "eklendi", "hedef", "oyna", "basari", "not", "orijinal", "aktif")
+ANAHTAR = ("kategori", "spor", "eklendi", "hedef", "oyna", "basari", "not", "orijinal", "aktif", "istatistik", "aksiyon")
 
 # kod -> (MTID, SOV|None, çıktı N, açıklama). Ham biçim: t<MTID>[/<SOV>]/<N>   ör. t43/4 = Toplam Gol 6+
 KODLAR = {
     "ms1": (1, None, 1, "MS 1"), "msx": (1, None, 2, "MS X"), "ms2": (1, None, 3, "MS 2"),
     "u25": (12, 2.5, 2, "2.5 Üst"), "a25": (12, 2.5, 1, "2.5 Alt"), "u35": (13, 3.5, 2, "3.5 Üst"), "a35": (13, 3.5, 1, "3.5 Alt"),
+    "u05": (11, 0.5, 2, "0.5 Üst (tam maç, genel)"), "a05": (11, 0.5, 1, "0.5 Alt (tam maç, genel)"),
+    "u15": (11, 1.5, 2, "1.5 Üst"), "a15": (11, 1.5, 1, "1.5 Alt"),
     "u45": (155, 4.5, 2, "4.5 Üst"), "a45": (155, 4.5, 1, "4.5 Alt"), "u55": (155, 5.5, 2, "5.5 Üst"),
     "kgvar": (38, None, 1, "KG Var"), "kgyok": (38, None, 2, "KG Yok"),
     "tg01": (43, None, 1, "Toplam Gol 0-1"), "tg23": (43, None, 2, "Toplam Gol 2-3"), "tg45": (43, None, 3, "Toplam Gol 4-5"), "tg6": (43, None, 4, "Toplam Gol 6+"),
@@ -51,16 +55,97 @@ KODLAR = {
     "ciftalt15": (528, None, 1, "İki yarıda da 1.5 Alt (Evet)"),
     "eviyu05": (455, 0.5, 2, "Ev sahibi İY 0.5 Üst"), "eviya05": (455, 0.5, 1, "Ev sahibi İY 0.5 Alt"),
     "depiyu05": (457, 0.5, 2, "Deplasman İY 0.5 Üst"), "depiya05": (457, 0.5, 1, "Deplasman İY 0.5 Alt"),
+    "evu05": (212, 0.5, 2, "Ev sahibi Alt/Üst 0.5 (tam maç)"), "eva05": (212, 0.5, 1, "Ev sahibi Alt/Üst 0.5 Alt (tam maç)"),
+    "depu05": (256, 0.5, 2, "Deplasman Alt/Üst 0.5 (tam maç)"), "depa05": (256, 0.5, 1, "Deplasman Alt/Üst 0.5 Alt (tam maç)"),
     "iyskor11": (779, None, 2, "İY skoru 1-1"), "iyskor00": (779, None, 1, "İY skoru 0-0"),
     "evyari1": (586, None, 1, "Ev sahibi en çok gol: 1. yarı"), "evyarix": (586, None, 2, "Ev sahibi en çok gol: eşit"), "evyari2": (586, None, 3, "Ev sahibi en çok gol: 2. yarı"),
     "depyari1": (587, None, 1, "Deplasman en çok gol: 1. yarı"), "depyari2": (587, None, 3, "Deplasman en çok gol: 2. yarı"),
+    "iyms21": (5, None, 7, "İY/MS 2'den 1 (İY deplasman önde, MS ev kazanır)"), "iyms12": (5, None, 3, "İY/MS 1'den 2 (İY ev önde, MS deplasman kazanır)"),
+    "iymsx1": (5, None, 4, "İY/MS 0'dan 1 (İY berabere, MS ev kazanır)"),
+    "hms1": (268, -1.0, 1, "Handikap -1 Ev Sahibi kazanır (HMS 1)"),
+    "u25kg": (446, 2.5, 2, "2.5 Üst ve KG Var"), "iyu25": (15, 2.5, 2, "İY 2.5 Üst"),
 }
 OZEL = {}      # taktikler.txt içindeki @kod tanımları (dosya okunurken dolar)
 
 # favoriye göre değişen kod: (ev favoriyse kullanılacak kod, deplasman favoriyse kullanılacak kod). Favori = MS'de düşük oranlı taraf.
-FAV_KODLAR = {"iygolfav": ("iy1u15", "iy2u15"), "msfav": ("ms1", "ms2"), "msalt": ("ms2", "ms1")}
+FAV_KODLAR = {"iygolfav": ("iy1u15", "iy2u15"), "msfav": ("ms1", "ms2"), "msalt": ("ms2", "ms1"), "iymsfav": ("iyms21", "iyms12")}
 FAV_ACIKLAMA = {"iygolfav": "İY Gol Durumu: ev favori→İY sonucu 1 ve İY 1.5 Üst, deplasman favori→İY sonucu 2 ve İY 1.5 Üst",
-                "msfav": "Favori takımın MS oranı (düşük olan taraf)", "msalt": "Favori olmayan takımın MS oranı (yüksek olan taraf)"}
+                "msfav": "Favori takımın MS oranı (düşük olan taraf)", "msalt": "Favori olmayan takımın MS oranı (yüksek olan taraf)",
+                "iymsfav": "Favori takımın İY'yi kaybedip MS'i kazanması (İY/MS): ev favori→2'den1, deplasman favori→1'den2"}
+
+# ---------------------------------------------------------------- 2. aşama: oran filtresinden GEÇEN maçlar için istatistik + dallanma
+# (02.10.2026 eklendi, "KLMB" tarzı taktikler için). Oran-kuralları (yukarıdaki Kural sınıfı) SADECE bültendeki oranı okur, ağ isteği
+# yapmaz -> hızlı, 650+ maçlık taramada kullanılır. Bu katman TERSİNE: yalnızca oran filtresini GEÇEN (genelde <20) maç için
+# Flashscore'dan takımların son 6 maçının İLK YARI istatistiğini çeker (bkz. fetch_flash.iy_gol_son6) -> ağır ama az maça uygulanır.
+ISTATISTIK_SEVIYELER = {"iy_gol_son6": ("yuksek", "orta")}   # analizör adı -> olası seviye etiketleri (fetch_flash.iy_gol_son6 ile birebir)
+
+
+def _aksiyon_coz(istatistik, s):
+    """'yuksek:iyu15,iykg;orta:u25,u35' -> {'yuksek': ['iyu15','iykg'], 'orta': ['u25','u35']}; seviye adlarını ve pazar kodlarını doğrular."""
+    if istatistik not in ISTATISTIK_SEVIYELER:
+        raise ValueError(f"bilinmeyen istatistik analizörü '{istatistik}' (şimdilik: {', '.join(ISTATISTIK_SEVIYELER)})")
+    gecerli = ISTATISTIK_SEVIYELER[istatistik]
+    out = {}
+    for parca in s.split(";"):
+        if ":" not in parca:
+            raise ValueError(f"aksiyon biçimi 'seviye:kod1,kod2;seviye2:kod3,...': '{parca}'")
+        seviye, kodlar = parca.split(":", 1)
+        seviye = seviye.strip().lower()
+        if seviye not in gecerli:
+            raise ValueError(f"'{seviye}' geçerli bir seviye değil ({istatistik}: {', '.join(gecerli)})")
+        ks = [k.strip() for k in kodlar.split(",") if k.strip()]
+        if not ks:
+            raise ValueError(f"'{seviye}' için en az bir hedef kod gerekli")
+        for k in ks:
+            _kod_dogrula(k)
+        out[seviye] = ks
+    eksik = [s for s in gecerli if s not in out]
+    if eksik:
+        raise ValueError(f"aksiyon '{istatistik}' için şu seviye(ler) eksik: {', '.join(eksik)}")
+    return out
+
+
+_FLASH = {"session": None, "cache_iy": None, "listeler": {}}      # taktik.py içinde yalnız istatistik-aşamalı taktik varsa kurulur
+
+
+def _flash_oturum():
+    if _FLASH["session"] is None:
+        import fetch_flash as FF
+        _FLASH["session"] = FF.make_session()
+        _FLASH["cache_iy"] = FF.load_cache_iy()
+    return _FLASH["session"], _FLASH["cache_iy"]
+
+
+def _flash_liste(gun_farki):
+    import fetch_flash as FF
+    if gun_farki not in _FLASH["listeler"]:
+        s, _ = _flash_oturum()
+        _FLASH["listeler"][gun_farki] = FF.load_list(s, gun_farki) or []
+    return _FLASH["listeler"][gun_farki]
+
+
+def istatistik_uygula(t, ev):
+    """Oran filtresini geçen BİR maç için 2. aşama istatistik analizini çalıştırır. -> (stat_sonuc dict, hedefler [kod,...]) | (None, None)
+    (Flashscore'da eşleşme/veri yoksa None — BWM ilkesi: veri yoksa tahmin uretme, sessizce 'orta' varsayılmaz)."""
+    import fetch_flash as FF
+    analizor = t.get("istatistik")
+    if analizor != "iy_gol_son6":                     # şimdilik tek analizör; ileride sözlükle genişler
+        return None, None
+    gun_farki = max(0, (datetime.fromtimestamp(ev["esd"], N.TR).date() - datetime.now(N.TR).date()).days)
+    flist = _flash_liste(gun_farki)
+    if not flist:
+        return None, None
+    s, cache_iy = _flash_oturum()
+    uyarlanan = {"match_id": f"{ev['esd_ms']}_{ev['hn']}_{ev['an']}", "home": ev["hn"], "away": ev["an"],
+                 "kickoff_time": datetime.fromtimestamp(ev["esd"]).isoformat()}
+    eslesme = FF.link([uyarlanan], flist).get(uyarlanan["match_id"])
+    if not eslesme:
+        return None, None
+    sonuc = FF.iy_gol_son6(s, eslesme, cache_iy)
+    if not sonuc:
+        return None, None
+    aksiyon = _aksiyon_coz(analizor, t["aksiyon"])
+    return sonuc, aksiyon.get(sonuc["seviye"], [])
 
 
 # ---------------------------------------------------------------- kural + pazar kodu + aralık
@@ -120,17 +205,26 @@ def _num(x):
 
 
 class Kural:
-    def __init__(self, kod, araliklar, ilk=False, yorum=""):
+    def __init__(self, kod, araliklar, ilk=False, yorum="", kod2=None, kapali=False):
         self.kod, self.ilk, self.yorum = kod.lower(), ilk, yorum
-        self.araliklar = araliklar                          # [(lo,hi), ...] VEYA
-        self.fav = self.kod in FAV_KODLAR
+        self.araliklar = araliklar                          # [(lo,hi), ...] VEYA ([] kapalı kuralında)
+        self.kod2 = kod2.lower() if kod2 else None
+        self.fark = self.kod2 is not None                   # korelasyon kuralı: |oran(kod)-oran(kod2)| aralığa uysun
+        self.kapali = kapali                                # pazar AÇIK OLMAMALI kuralı: v=None ise geçer
+        self.fav = (not self.fark) and self.kod in FAV_KODLAR
         if self.fav:
             self.fav_ev, self.fav_dep = FAV_KODLAR[self.kod]
             self.t = self.sov = self.n = None
         else:
             self.t, self.sov, self.n = _kod_coz(self.kod)
+        if self.fark:
+            self.t2, self.sov2, self.n2 = _kod_coz(self.kod2)
 
     def ad(self):
+        if self.fark:
+            return f"fark({self.kod},{self.kod2})"
+        if self.kapali:
+            return f"{self.kod}(kapalı)"
         return self.kod + ("@ilk" if self.ilk else "")
 
     def aralik_txt(self):
@@ -138,13 +232,24 @@ class Kural:
         return "|".join(f"{_num(lo)}-{_num(hi)}" if hi != float("inf") else f">={_num(lo)}" for lo, hi in self.araliklar)
 
     def gecer(self, v):
+        if self.kapali:
+            return v is None
         return v is not None and any(lo - 1e-9 <= v <= hi + 1e-9 for lo, hi in self.araliklar)
 
 
 def kural_coz(txt):
-    """'u45 4,20-5,10 # yorum' | 'iyskor11@ilk 8.00-8.92' | 'altfav 4.45-4.55|4.70-4.80' (VEYA) -> Kural"""
+    """'u45 4,20-5,10 # yorum' | 'iyskor11@ilk 8.00-8.92' | 'altfav 4.45-4.55|4.70-4.80' (VEYA) | 'fark skor22 tg6 <=0.60' (korelasyon)
+    | 'kapali u15 # yorum' (pazar açık OLMAMALI) -> Kural"""
     yorum = txt.split("#", 1)[1].strip() if "#" in txt else ""
     p = txt.split("#", 1)[0].split()
+    if p and p[0].lower() == "fark":
+        if len(p) != 4:
+            raise ValueError(f"korelasyon kuralı biçimi 'fark <kod1> <kod2> <aralık>': '{txt}'")
+        return Kural(p[1], _araliklar(p[3]), False, yorum, kod2=p[2])
+    if p and p[0].lower() == "kapali":
+        if len(p) != 2:
+            raise ValueError(f"kapalı kuralı biçimi 'kapali <kod>': '{txt}'")
+        return Kural(p[1], [], False, yorum, kapali=True)
     if len(p) != 2:
         raise ValueError(f"kural biçimi '<kod> <aralık>': '{txt}'")
     ilk = p[0].lower().endswith("@ilk")
@@ -174,7 +279,7 @@ def dosya_oku(yol=DOSYA):
         try:
             if satir.startswith("["):
                 cur = {"ad": satir.strip("[] "), "kategori": KATEGORI, "spor": "futbol", "eklendi": "", "hedef": "", "oyna": [], "basari": None, "not": "",
-                       "orijinal": "", "aktif": True, "kurallar": []}
+                       "orijinal": "", "aktif": True, "kurallar": [], "istatistik": "", "aksiyon": ""}
                 out.append(cur)
             elif m := re.match(r"(" + "|".join(ANAHTAR) + r")\s*:\s*(.*)$", satir):
                 k, v = m[1], m[2].strip()
@@ -208,13 +313,22 @@ def _blok_txt(t):
         L.append("oyna: " + " ".join(t["oyna"]))
     if t["basari"]:
         L.append(f"basari: {t['basari']}")
+    if t.get("istatistik"):
+        L.append(f"istatistik: {t['istatistik']}")
+    if t.get("aksiyon"):
+        L.append(f"aksiyon: {t['aksiyon']}")
     if not t["aktif"]:
         L.append("aktif: hayir")
     for k in ("not", "orijinal"):
         if t.get(k):
             L.append(f"{k}: {t[k].replace('#', '').replace(chr(10), ' / ')}")
     for k in t["kurallar"]:
-        L.append(f"{k.ad():<14} {k.aralik_txt():<11}" + (f" # {k.yorum}" if k.yorum else ""))
+        if k.fark:
+            L.append(f"fark {k.kod} {k.kod2} {k.aralik_txt():<11}" + (f" # {k.yorum}" if k.yorum else ""))
+        elif k.kapali:
+            L.append(f"kapali {k.kod}" + (f"  # {k.yorum}" if k.yorum else ""))
+        else:
+            L.append(f"{k.ad():<14} {k.aralik_txt():<11}" + (f" # {k.yorum}" if k.yorum else ""))
     return "\n".join(L)
 
 
@@ -249,9 +363,13 @@ def duzenle(a, yol=DOSYA):
         spor = (a.spor or "futbol").strip().lower()
         if spor not in SPOR:
             raise ValueError(f"bilinmeyen spor '{spor}' (futbol | basketbol)")
+        if bool(a.istatistik) != bool(a.aksiyon):
+            raise ValueError("--istatistik ve --aksiyon birlikte verilmeli (2. aşama istatistik+dallanma taktiği için)")
+        if a.istatistik:
+            _aksiyon_coz(a.istatistik, a.aksiyon)       # doğrulama; hatalıysa burada patlar
         t = {"ad": a.ekle, "kategori": a.kategori or KATEGORI, "spor": spor, "eklendi": bugun, "hedef": a.hedef or "", "oyna": (a.oyna or "").split(),
              "basari": a.basari, "not": a.not_ or "", "orijinal": a.orijinal or "", "aktif": True,
-             "kurallar": [kural_coz(x) for x in a.kural]}
+             "kurallar": [kural_coz(x) for x in a.kural], "istatistik": a.istatistik or "", "aksiyon": a.aksiyon or ""}
         for x in t["oyna"]:
             _kod_dogrula(x)
         tk.append(t)
@@ -268,9 +386,12 @@ def duzenle(a, yol=DOSYA):
             t["aktif"] = bool(a.ac)
             msg, hedef = f"{'AÇILDI' if a.ac else 'KAPATILDI'}: {t['ad']}", (t["ad"] if a.ac else None)
         else:
-            for k, v in (("hedef", a.hedef), ("basari", a.basari), ("not", a.not_), ("orijinal", a.orijinal), ("kategori", a.kategori)):
+            for k, v in (("hedef", a.hedef), ("basari", a.basari), ("not", a.not_), ("orijinal", a.orijinal), ("kategori", a.kategori),
+                         ("istatistik", a.istatistik), ("aksiyon", a.aksiyon)):
                 if v is not None:
                     t[k] = v
+            if (a.istatistik is not None or a.aksiyon is not None) and t.get("istatistik"):
+                _aksiyon_coz(t["istatistik"], t["aksiyon"])   # doğrulama; hatalıysa burada patlar
             if a.spor is not None:
                 spor = a.spor.strip().lower()
                 if spor not in SPOR:
@@ -292,7 +413,7 @@ def _deger(mk, t, sov, n):
     for m in mk:
         if m["t"] == t and (sov is None or abs(m["sov"] - sov) < 0.01):
             v = m["o"].get(str(n))
-            if v:
+            if v and v > 1.01:          # <=1.01 = kilitli/askıya alınmış dummy oran (nesine._satir ile aynı eşik), gerçek fiyat değil
                 return v
     return None
 
@@ -335,7 +456,12 @@ def _kural_hedef(k, mk):
 
 
 def _kural_etiket(k, mk):
-    """Çıktıda gösterilecek etiket; favoriye göre değişen kuralda hangi alt-koda gidildiğini de yazar."""
+    """Çıktıda gösterilecek etiket; favoriye göre değişen kuralda hangi alt-koda gidildiğini, korelasyon kuralında iki pazarın ham oranını da yazar."""
+    if k.fark:
+        v1, v2 = _deger(mk, k.t, k.sov, k.n), _deger(mk, k.t2, k.sov2, k.n2)
+        return f"{k.kod}={_fmt(v1)}↔{k.kod2}={_fmt(v2)} fark"
+    if k.kapali:
+        return k.ad()
     if not k.fav:
         return k.ad()
     fav = _favori(mk)
@@ -344,12 +470,16 @@ def _kural_etiket(k, mk):
 
 
 def degerlendir(ev, kurallar, kaynak="nesine"):
-    """-> [(değer|None, geçti_mi)] her kural için."""
+    """-> [(değer|None, geçti_mi)] her kural için. Korelasyon kuralında 'değer' = |oran(kod)-oran(kod2)| farkıdır."""
     sonuc = []
     for k in kurallar:
         mk = _mk_icin(ev, k, kaynak)
-        hedef = _kural_hedef(k, mk)
-        v = _deger(mk, *hedef) if hedef else None
+        if k.fark:
+            v1, v2 = _deger(mk, k.t, k.sov, k.n), _deger(mk, k.t2, k.sov2, k.n2)
+            v = abs(v1 - v2) if v1 is not None and v2 is not None else None
+        else:
+            hedef = _kural_hedef(k, mk)
+            v = _deger(mk, *hedef) if hedef else None
         sonuc.append((v, k.gecer(v)))
     return sonuc
 
@@ -400,6 +530,21 @@ def _satir(ev, kurallar, sonuclar, oyna, etiket="", spor="futbol"):
     return f"  {d:%d.%m %H:%M} {ev['lig'][:22]} | {ev['hn'][:18]} - {ev['an'][:18]} | {ms_txt} | {par}{oy}{etiket}"
 
 
+def _satir_stat(ev, kurallar, sonuclar, stat_sonuc, hedefler):
+    """2. aşama (istatistik+aksiyon) taktikleri için satır: 1. aşama oran kontrolü + Flashscore İY istatistiği + dallanan hedef(ler)."""
+    d = datetime.fromtimestamp(ev["esd"], N.TR)
+    ms = N._mk(ev, 1)
+    ms_txt = f"MS {_fmt(ms.get('1'))}/{_fmt(ms.get('2'))}/{_fmt(ms.get('3'))}"
+    par = " ".join(f"{_kural_etiket(k, _mk_icin(ev, k, 'nesine'))} {_fmt(v)}{'' if ok else '✗'}" for k, (v, ok) in zip(kurallar, sonuclar))
+    tr_ev = stat_sonuc["ev"].get("trend", "?"); tr_dep = stat_sonuc["dep"].get("trend", "?")
+    stat_txt = (f"Flashscore son 6 maç İY xG → ev λ{stat_sonuc['lam_ev_iy']} / dep λ{stat_sonuc['lam_dep_iy']} (toplam {stat_sonuc['lam_top_iy']}) "
+                f"| P(İY 1,5 Üst)≈{stat_sonuc['p_iy15ust']} P(İY KG Var)≈{stat_sonuc['p_iykg']} | SEVİYE: {stat_sonuc['seviye'].upper()} "
+                f"| trend ev:{tr_ev} dep:{tr_dep}")
+    oy = ("".join(f" | OYNA {o} " + _oyna_deger(ev, o) for o in hedefler)) if hedefler else " | hedef kod tanımsız (aksiyon kontrol et)"
+    return (f"  {d:%d.%m %H:%M} {ev['lig'][:22]} | {ev['hn'][:18]} - {ev['an'][:18]} | {ms_txt} | {par}\n"
+            f"      ↳ {stat_txt}{oy}")
+
+
 # Araştırma (22.09.2026, 211 arşiv kaydı): son çekim kickoff'tan medyan 103 dk önce (yalnız %4'ü ≤20 dk); MS1 oranı ilk-son arası
 # medyan 0.05, %51'i >0.05 kaymış (maks 4.75). Kapanış (kickoff'a yakın) ile güncel oran gerçekten farklı olabiliyor; TÜM taktikler
 # her taramada iki etiketle raporlanır (pencereyle dışlama YAPILMAZ, çünkü ≤20 dk'ya nadiren denk gelinir — dışlarsak çoğu tarama boş kalır).
@@ -410,6 +555,71 @@ def _kapanis_mi(esd, referans_ts):
     """kickoff (esd) referans_ts'e göre kapanışa yakın mı: canlıda referans=şimdi, arşivde referans=son_cekim."""
     dk = (esd - referans_ts) / 60
     return 0 <= dk <= KAPANIS_ESIK_DK
+
+
+def _iz_ekle(iz_satirlari, t, e, s, ks):
+    iz_satirlari.append({
+        "taktik": t["ad"], "spor": t.get("spor", "futbol"), "ev": e["hn"], "dep": e["an"], "lig": e["lig"],
+        "esd": e["esd"], "esd_ms": e["esd_ms"], "tarandi": time.time(),
+        "kurallar": [{"kod": k.ad(), "deger": v} for k, (v, _) in zip(ks, s)],
+    })
+
+
+def _iz_yaz(dosya, satirlar):
+    if not satirlar:
+        return
+    onceki = json.load(open(dosya, encoding="utf-8")) if os.path.exists(dosya) else []
+    anahtarlar = {(r["taktik"], r["esd_ms"], r["ev"], r["dep"]) for r in onceki}
+    yeni = [r for r in satirlar if (r["taktik"], r["esd_ms"], r["ev"], r["dep"]) not in anahtarlar]
+    if not yeni:
+        return
+    os.makedirs(os.path.dirname(dosya) or ".", exist_ok=True)
+    json.dump(onceki + yeni, open(dosya, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
+    print(f"İZ KAYDI: {len(yeni)} yeni satır → {dosya} ({len(onceki) + len(yeni)} toplam)")
+
+
+def _iz_kontrol(a):
+    """Daha önce --iz-kaydet ile kaydedilmiş TAM maçları: kickoff geçtiyse kapanış oranıyla YENİDEN değerlendirir + sonucu gösterir."""
+    import bulten_arsiv as ba
+    kayitlar = json.load(open(a.iz_kontrol, encoding="utf-8"))
+    _, tum = dosya_oku()
+    tk = {t["ad"]: t for t in tum}
+    now = time.time()
+    for r in kayitlar:
+        t = tk.get(r["taktik"])
+        if not t:
+            print(f"- {r['taktik']}: taktik artık yok/silindi, atlandı"); continue
+        if r["esd"] > now:
+            print(f"- {r['ev']} - {r['dep']} ({r['taktik']}): henüz başlamadı, kapanış yok"); continue
+        kaynak = KAYNAK.get(r.get("spor", "futbol"), "nesine")
+        ymd = datetime.fromtimestamp(r["esd"], N.TR).strftime("%Y%m%d")
+        gun = ba._load(ba._day_file(kaynak, ymd), {"maclar": {}})["maclar"]
+        kayit = gun.get(f"{r['esd_ms']}_{r['ev']}_{r['dep']}")
+        ko = r.get("kapanis_orani")
+        if ko and ko.get("mk"):
+            mk_son, kapanis_dk, cekim_bilgi = ko["mk"], round((r["esd"] - ko["cekildi"]) / 60), "kapanis_bekle.py ile T-5dk'da yakalandı"
+        elif kayit:
+            mk_son = kayit["son"]
+            kapanis_dk = round((r["esd"] - datetime.fromisoformat(kayit["son_cekim"]).timestamp()) / 60)
+            cekim_bilgi = f"genel arşiv son çekim {kayit['son_cekim'][11:16]} ({kayit.get('cekim', 1)}x) — T-5dk yakalaması yok"
+        else:
+            print(f"- {r['ev']} - {r['dep']} ({r['taktik']}): arşivde kayıt yok, kıyaslanamıyor"); continue
+        ev = {"esd": r["esd"], "esd_ms": r["esd_ms"], "hn": r["ev"], "an": r["dep"], "lig": r["lig"], "mk": mk_son}
+        s_kapanis = degerlendir(ev, t["kurallar"], kaynak)
+        hala = all(ok for _, ok in s_kapanis)
+        tarandi = datetime.fromtimestamp(r["tarandi"], N.TR).strftime("%H:%M")
+        print(f"■ {r['ev']} - {r['dep']} ({r['taktik']}) | tarandı {tarandi} → kapanış ({cekim_bilgi}, kickoff'a {kapanis_dk} dk kala)")
+        for k, (v0, (v1, ok1)) in zip(t["kurallar"], zip(r["kurallar"], s_kapanis)):
+            degisti = "" if v0["deger"] == v1 else f" [DEĞİŞTİ, taramada {_fmt(v0['deger'])} idi]"
+            print(f"   {k.ad()}: {_fmt(v1)}{' ✓' if ok1 else ' ✗'}{degisti}")
+        sonuc = kayit.get("sonuc") if kayit else None
+        if not sonuc:
+            print(f"   sinyal kapanışta {'HÂLÂ GEÇERLİ' if hala else 'KAYBOLMUŞ'} | sonuç henüz yok (bulten_arsiv.py sonuc --gun N çalıştır)")
+            continue
+        ms = sonuc.get("ms")
+        hit = basari(t.get("basari"), sonuc) if t.get("basari") else None
+        print(f"   MS {ms[0]}-{ms[1]} | sinyal kapanışta {'HÂLÂ GEÇERLİ' if hala else 'KAYBOLMUŞTU (taramadaki oran kapanışa kadar bozulmuş)'}"
+              + (f" | {'TUTTU' if hit else 'TUTMADI'}" if hit is not None else ""))
 
 
 def _tara_canli(a, taktikler):
@@ -433,6 +643,7 @@ def _tara_canli(a, taktikler):
           f"| her taktik 2 liste halinde: KAPANIŞ (kickoff'a ≤{KAPANIS_ESIK_DK} dk, hedef 5-10 dk, nadir) + GÜNCEL (kapanış öncesi, oran değişebilir)")
     ilk_var = False
     now = time.time()
+    iz_satirlari = []
     for t in taktikler:
         ks = t["kurallar"]
         if not ks:
@@ -445,17 +656,31 @@ def _tara_canli(a, taktikler):
         yakin = [(e, s) for e, s in ts if len(ks) > 1 and sum(ok for _, ok in s) == len(ks) - 1]
         kap = [(e, s) for e, s in tam if _kapanis_mi(e["esd"], now)]
         gun = [(e, s) for e, s in tam if not _kapanis_mi(e["esd"], now)]
+        if getattr(a, "iz_kaydet", None):
+            for e, s in tam:
+                _iz_ekle(iz_satirlari, t, e, s, ks)
         gec = " · ".join(f"{k.ad()} {sum(1 for _, s in ts if s[i][1])}/{sum(1 for _, s in ts if s[i][0] is not None)}" for i, k in enumerate(ks))
         print(f"■ {t['ad']}{' [' + sp + ']' if sp != 'futbol' else ''} → {t['hedef'] or '?'} | TAM {len(tam)} (KAPANIŞ {len(kap)} + GÜNCEL {len(gun)})"
               + (f" · yakın {len(yakin)}" if len(ks) > 1 else "") + f" | geçen/açık: {gec}")
+        istat_var = bool(t.get("istatistik")) and sp == "futbol"     # 2. aşama şimdilik yalnız futbol (fetch_flash futbol'a özel)
+        if istat_var:
+            print("  ⚠ 2. aşama (Flashscore İY istatistiği) yalnız oran filtresini geçen maçlara, tek tek ağdan çekiliyor — yavaş olabilir.")
         if kap:
             print(f"  ⏱ KAPANIŞ oranıyla uyuyor ({len(kap)}):")
             for e, s in kap[:a.n]:
-                print(_satir(e, ks, s, t["oyna"], spor=sp))
+                if istat_var:
+                    sonuc, hedefler = istatistik_uygula(t, e)
+                    print(_satir_stat(e, ks, s, sonuc, hedefler) if sonuc else _satir(e, ks, s, [], spor=sp) + "\n      ↳ Flashscore'da eşleşme/İY verisi yok, istatistik atlandı")
+                else:
+                    print(_satir(e, ks, s, t["oyna"], spor=sp))
         if gun:
             print(f"  GÜNCEL oranla (kapanış değil) uyuyor ({len(gun)}):")
             for e, s in gun[:a.n]:
-                print(_satir(e, ks, s, t["oyna"], spor=sp))
+                if istat_var:
+                    sonuc, hedefler = istatistik_uygula(t, e)
+                    print(_satir_stat(e, ks, s, sonuc, hedefler) if sonuc else _satir(e, ks, s, [], spor=sp) + "\n      ↳ Flashscore'da eşleşme/İY verisi yok, istatistik atlandı")
+                else:
+                    print(_satir(e, ks, s, t["oyna"], spor=sp))
         if a.yakin and yakin:
             print(f"  yakın (tek kural kaçırdı, {len(yakin)}):")
             for e, s in yakin[:a.n]:
@@ -464,6 +689,11 @@ def _tara_canli(a, taktikler):
             print(f"  not: {t['not']}")
     if ilk_var:
         print("@ilk = arşivdeki ilk kayıtlı oran (gerçek açılış değil; arşiv 21.09.2026'da başladı)")
+    if _FLASH["cache_iy"] is not None:
+        import fetch_flash as FF
+        FF.save_cache_iy(_FLASH["cache_iy"])
+    if getattr(a, "iz_kaydet", None):
+        _iz_yaz(a.iz_kaydet, iz_satirlari)
 
 
 def _sonuc_isle(gun):
@@ -516,8 +746,12 @@ def _tara_arsiv(a, taktikler):
             s = []
             for k in ks:
                 mk = r["ilk"] if (k.ilk and r["ilk"]) else r["mk"]
-                hedef = _kural_hedef(k, mk)
-                v = _deger(mk, *hedef) if hedef else None
+                if k.fark:
+                    v1, v2 = _deger(mk, k.t, k.sov, k.n), _deger(mk, k.t2, k.sov2, k.n2)
+                    v = abs(v1 - v2) if v1 is not None and v2 is not None else None
+                else:
+                    hedef = _kural_hedef(k, mk)
+                    v = _deger(mk, *hedef) if hedef else None
                 s.append((v, k.gecer(v)))
             if all(ok for _, ok in s):
                 secili.append((r, s, basari(t["basari"], r["sonuc"])))
@@ -554,7 +788,11 @@ def _kurallar(taktikler):
         sp = f" [{t['spor']}]" if t.get("spor", "futbol") != "futbol" else ""
         print(f"■ {t['ad']}{sp} [{t['kategori']}] {'' if t['aktif'] else '(KAPALI) '}| hedef: {t['hedef']} | oyna: {' '.join(t['oyna'])} | basari: {t['basari']}")
         for k in t["kurallar"]:
-            if k.fav:
+            if k.fark:
+                print(f"   {k.ad():14} {k.aralik_txt():11} korelasyon: |t{k.t}/{'' if k.sov is None else k.sov}/{k.n} - t{k.t2}/{'' if k.sov2 is None else k.sov2}/{k.n2}|  {k.yorum}")
+            elif k.kapali:
+                print(f"   {k.ad():14} {'':11} pazar AÇIK OLMAMALI: t{k.t}/{'' if k.sov is None else k.sov}/{k.n}  {k.yorum}")
+            elif k.fav:
                 print(f"   {k.ad():14} {k.aralik_txt():11} favori: ev→{k.fav_ev}, dep→{k.fav_dep}  {k.yorum}")
             else:
                 print(f"   {k.ad():14} {k.aralik_txt():11} t{k.t}/{'' if k.sov is None else k.sov}/{k.n}  {k.yorum}")
@@ -575,6 +813,8 @@ def main(argv=None):
     p.add_argument("--kodlar", action="store_true")
     p.add_argument("--yenile", action="store_true")
     p.add_argument("--kayitsiz", action="store_true")
+    p.add_argument("--iz-kaydet", help="TAM maçları bu dosyaya kaydet (kickoff geçince --iz-kontrol ile aynı sinyal kapanışta da geçerliydi mi / tuttu mu diye bakılır)")
+    p.add_argument("--iz-kontrol", help="--iz-kaydet ile kaydedilmiş dosyadaki maçları kapanış oranı + sonuçla karşılaştır (başlamışları)")
     for k in ("ekle", "degistir", "kapat", "ac", "sil"):
         p.add_argument(f"--{k}", metavar="AD")
     p.add_argument("--hedef")
@@ -585,7 +825,11 @@ def main(argv=None):
     p.add_argument("--kategori")
     p.add_argument("--spor", help="futbol (varsayılan) | basketbol")
     p.add_argument("--kural", action="append")
+    p.add_argument("--istatistik", help="2. aşama istatistik analizörü (şimdilik: iy_gol_son6 = Flashscore son 6 maç İY xG Poisson)")
+    p.add_argument("--aksiyon", help="istatistik sonucuna göre hedef dallanması: 'seviye1:kod1,kod2;seviye2:kod3,kod4' (ör. 'yuksek:iyu15,iykg;orta:u25,u35')")
     a = p.parse_args(argv)
+    if a.iz_kontrol:
+        return _iz_kontrol(a)
     if a.kodlar:
         dosya_oku()
         print("kod: MTID/SOV/N açıklama | ham: t<MTID>[/SOV]/<N> | aralık: 4.20-5.10 (virgül olur) >=4.2 <=5.1 =7.00 | kod@ilk = arşivdeki ilk oran")
