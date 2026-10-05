@@ -64,7 +64,12 @@ RADAR = [(360, "T-6sa"), (120, "T-2sa"), (60, "T-60dk"), (30, "T-30dk")]
 RADAR_TOL = 8
 DP_ESIK, DP_SESSIZ = 2.0, 1.0      # anlamli kayma / "kipirdamadi" bandi (yuzde puan)
 EV_ESIK, MIN_ORAN, MIN_P = 0.02, 1.30, 0.10
-HAREKET_ESIK = 2.0                 # dunya adil olasiliginda 'para aktı' sayilan kayma (yuzde puan)
+HAREKET_ESIK = 2.0                 # taban: dunya adil olasiliginda "para akti" sayilan kayma (puan)
+KADEME_ESIK = {"T-6sa": 3.0, "T-2sa": 2.5, "T-60dk": 2.0, "T-30dk": 2.0}  # erken hareket daha gurultulu
+MIN_KITAP = 6                      # Pinnacle yoksa en az bu kadar kitap onaylamali
+MAX_SAPMA = 0.04                   # kitaplar arasi std; ustunde "piyasa hemfikir degil" = gurultu
+GERI_DONUS = 1.0                   # son turda bu kadar geri dondiyse hareket kalici degil
+AKIS_EV_TABAN = -0.05              # EV bunun altindaysa hikaye guzel ama bahis kaybettirir: susturulur
 MESAJ_TAVANI = 5                   # tek taramada en fazla kac mesaj
 SEC = ["1", "X", "2"]
 SEC_AD = {"1": "Ev sahibi kazanır (MS 1)", "X": "Beraberlik (MS X)", "2": "Deplasman kazanır (MS 2)"}
@@ -344,6 +349,29 @@ def _hucre(dp_w, dp_n, hacim="YOK"):
     return "D" if dp_w >= DP_ESIK else "-"
 
 
+def _kalite(k):
+    """Hareketi mesaja donusturmeden once kalite kapilari. -> (gecti_mi, sebep).
+    Dayanak: erken hareket gurultulu (hareketin ~%25'i son 2 saatte), keskin kitap onayi
+    olmadan kayma tek kitabin limit duzeltmesi olabilir, kitaplar dagilmissa piyasa hemfikir
+    degildir, geri donen hareket haber degil dalgalanmadir, EV cok negatifse hikaye guzel ama
+    bahis kaybettirir (PROMPT.md bolum 5/7)."""
+    tip = k.get("tip")
+    if tip == "GEC":
+        return False, "fiyat kapandi (Nesine duzeltti)"
+    esik = KADEME_ESIK.get(k.get("kademe") or "", HAREKET_ESIK)
+    if k["dp_w"] < esik:
+        return False, "kayma %.1f < kademe esigi %.1f" % (k["dp_w"], esik)
+    if not k.get("pin") and k.get("n_kitap", 0) < MIN_KITAP:
+        return False, "yetersiz onay (%d kitap, Pinnacle yok)" % k.get("n_kitap", 0)
+    if k.get("sapma") is not None and k["sapma"] > MAX_SAPMA:
+        return False, "kitaplar hemfikir degil (sapma %.3f)" % k["sapma"]
+    if k["dp_w"] < k.get("dp_w_onceki", 0.0) - GERI_DONUS:
+        return False, "hareket geri donuyor (%.1f -> %.1f)" % (k.get("dp_w_onceki", 0.0), k["dp_w"])
+    if tip == "AKIS" and (k.get("ev") or -1) < AKIS_EV_TABAN:
+        return False, "fiyat cok kotu (EV %+.1f%%)" % ((k.get("ev") or 0) * 100)
+    return True, "OK"
+
+
 def _gun_dosyasi():
     os.makedirs(LOG_DIR, exist_ok=True)
     return os.path.join(LOG_DIR, "balina_%s.jsonl" % datetime.now(TR).strftime("%Y%m%d"))
@@ -363,6 +391,7 @@ def kaydet(max_lig=6, butce=3, saat=6.0, radar=False, sessiz=False):
     d, bilgi = dunya(maclar, max_lig, butce) if maclar else ({}, {"atlanan": "mac yok"})
     yol = _gun_dosyasi()
     temel = {}
+    son_tur = {}
     if os.path.exists(yol):
         with open(yol, encoding="utf-8") as f:
             for s in f:
@@ -371,6 +400,7 @@ def kaydet(max_lig=6, butce=3, saat=6.0, radar=False, sessiz=False):
                 except Exception:
                     continue
                 temel.setdefault(k["anahtar"], k)
+                son_tur[k["anahtar"]] = k          # en son gorulen (hareket kalici mi?)
     satir, sinyal = [], []
     for i, m in enumerate(maclar):
         pn = _devig({"1": m["oran"][0], "X": m["oran"][1], "2": m["oran"][2]})
@@ -391,6 +421,8 @@ def kaydet(max_lig=6, butce=3, saat=6.0, radar=False, sessiz=False):
                  "lig": m["lig"], "sec": sec, "oran_n": m["oran"][j], "p_n": round(pn[sec], 5),
                  "p_w": round(p_w, 5) if p_w is not None else None,
                  "n_kitap": cc["n"] if cc else 0, "marj_n": round(marj, 4),
+                 "pin": bool(cc and cc.get("pin_p")), "sapma": round(cc["disp"], 4) if cc else None,
+                 "dp_w_onceki": (son_tur.get(ak) or {}).get("dp_w", 0.0),
                  "dp_w": round(dp_w, 2), "dp_n": round(dp_n, 2), "hucre": hucre,
                  "ev": round(ev, 4) if ev is not None else None, "hacim": "YOK",
                  "dk_kala": int((m["ts"] - simdi) / 60), "kademe": m.get("kademe")}
@@ -405,7 +437,10 @@ def kaydet(max_lig=6, butce=3, saat=6.0, radar=False, sessiz=False):
                 k["tip"] = "GEC"         # para aktı, Nesine de takip etti
             else:
                 continue
-            sinyal.append(k)
+            gecti, sebep = _kalite(k)
+            k["kalite"] = sebep
+            if gecti:
+                sinyal.append(k)
     try:
         with open(yol, "a", encoding="utf-8") as f:
             for k in satir:
@@ -456,7 +491,12 @@ def _mesaj(k):
               "Yani haber doğru ama fiyat artık kapanmış."]
     else:
         s += ["NESİNE NE YAPTI: Kıpırdamadı (%+.1f puan) - henüz geri kaldı." % k["dp_n"]]
-    s += ["",
+    s += ["GÜVEN: %d kitap%s, kitaplar %s, hareket %s" % (
+              k.get("n_kitap", 0),
+              " (Pinnacle onaylı)" if k.get("pin") else " (Pinnacle yok)",
+              "hemfikir" if (k.get("sapma") or 0) <= MAX_SAPMA else "dağınık",
+              "kalıcı" if k["dp_w"] >= k.get("dp_w_onceki", 0.0) else "yavaşlıyor"),
+          "",
           "FİYAT: Nesine %s @ %.2f | adil karşılığı %.2f | fark %%%+.1f"
           % (k["sec"], k["oran_n"], adil, (k.get("ev") or 0) * 100),
           "",
@@ -533,6 +573,13 @@ def rapor(gun=None, hepsi=False, yazdir=True):
                    (100 * sum(k["ev"] for k in dl) / len(dl),
                     sum(1 for k in dl if k["ev"] > 0), len(dl),
                     100 * sum(k["marj_n"] for k in dl) / len(dl)))
+    red = {}
+    for k in son.values():
+        if k.get("tip") and k.get("kalite") and k["kalite"] != "OK":
+            red[k["kalite"].split(" (")[0]] = red.get(k["kalite"].split(" (")[0], 0) + 1
+    if red:
+        sat.append("elenen hareketler: " + ", ".join("%s x%d" % x for x in
+                   sorted(red.items(), key=lambda y: -y[1])[:5]))
     ilginc = sorted([k for k in son.values() if k["hucre"] in ("A", "B", "C", "D")],
                     key=lambda k: -(k.get("ev") if k.get("ev") is not None else -9))[:20]
     for k in ilginc:
