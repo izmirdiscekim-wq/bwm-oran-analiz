@@ -195,6 +195,45 @@ def nesine_1x2(saat=6.0, alt_dk=20):
     return out, taze
 
 
+def iddaa_1x2(saat=6.0, alt_dk=20):
+    """Kullanici iddaa.com'da oynuyor; EV o kitabin fiyatina gore hesaplanmali.
+    Olculen fark (06.10.2026, Estudiantes-Gimnasia): iddaa %13.2 marj, Nesine %17.6 -> ayni
+    hareket iddaa'da +EV, Nesine'de -EV cikabiliyor. -> ([{ts,esd_ms,home,away,lig,oran}], kaynak)."""
+    import fetch_iddaa as F
+    s = F._get_session()
+    cfg, comps = F._fetch_market_config(s), F._fetch_competitions(s)
+    raw = F._get_json(s, F.EVENTS_URL)["data"]
+    canli, simdi, out = set((raw.get("sc") or {}).keys()), time.time(), []
+    for e in raw.get("events", []):
+        if not e.get("d") or str(e.get("i")) in canli:
+            continue
+        if not (simdi + alt_dk * 60 < e["d"] < simdi + saat * 3600):
+            continue
+        pe = F._parse_event(e, cfg, comps, False)
+        mo = pe and pe["markets"].get("match_outcome")
+        if not isinstance(mo, dict):
+            continue
+        oran = [mo.get("1"), mo.get("X"), mo.get("2")]
+        if not all(oran) or any(o <= 1.0 for o in oran):
+            continue
+        out.append({"ts": e["d"], "esd_ms": int(e["d"] * 1000), "home": (pe["home"] or "").strip(),
+                    "away": (pe["away"] or "").strip(), "lig": pe.get("league") or "?", "oran": oran})
+    out.sort(key=lambda x: x["ts"])
+    return out, "iddaa"
+
+
+def yerel_1x2(saat=6.0, alt_dk=20):
+    """Once iddaa (bahsin oynandigi yer), olmazsa Nesine. -> (maclar, kaynak_adi, taze_mi)."""
+    try:
+        m, kaynak = iddaa_1x2(saat, alt_dk)
+        if m:
+            return m, kaynak, True
+    except Exception as ex:
+        print("iddaa alinamadi (%s), Nesine'ye dusuluyor" % ex, flush=True)
+    m, taze = nesine_1x2(saat, alt_dk)
+    return m, "Nesine", taze
+
+
 # ------------------------------------------------------------------ dunya
 def _sports():
     sp, _ = _cache("sports", SPORTS_TTL, lambda: _get("/sports/"))
@@ -378,7 +417,7 @@ def _gun_dosyasi():
 
 
 def kaydet(max_lig=6, butce=3, saat=6.0, radar=False, sessiz=False):
-    maclar, taze = nesine_1x2(saat)
+    maclar, kaynak, taze = yerel_1x2(saat)
     simdi = time.time()
     for m in maclar:
         m["kademe"] = _kademe((m["ts"] - simdi) / 60.0)
@@ -424,7 +463,7 @@ def kaydet(max_lig=6, butce=3, saat=6.0, radar=False, sessiz=False):
                  "pin": bool(cc and cc.get("pin_p")), "sapma": round(cc["disp"], 4) if cc else None,
                  "dp_w_onceki": (son_tur.get(ak) or {}).get("dp_w", 0.0),
                  "dp_w": round(dp_w, 2), "dp_n": round(dp_n, 2), "hucre": hucre,
-                 "ev": round(ev, 4) if ev is not None else None, "hacim": "YOK",
+                 "ev": round(ev, 4) if ev is not None else None, "hacim": "YOK", "kitap": kaynak,
                  "dk_kala": int((m["ts"] - simdi) / 60), "kademe": m.get("kademe")}
             satir.append(k)
             if p_w is None or p_w < MIN_P or m["oran"][j] < MIN_ORAN:
@@ -477,6 +516,7 @@ def _mesaj(k):
     onceki = k["p_w"] * 100 - k["dp_w"]
     adil = round(1.0 / k["p_w"], 2)
     taraf = {"1": k["hn"], "2": k["an"], "X": "beraberlik"}.get(k["sec"], k["sec"])
+    kitap = k.get("kitap") or "iddaa"
     s = [BASLIK.get(tip, tip),
          "%s - %s" % (k["hn"], k["an"]),
          "%s · %s · maça %s" % (k["lig"] or "?", tarih, sure),
@@ -487,21 +527,21 @@ def _mesaj(k):
          "Bu kayma, bilgili paranın bu tarafa yüklendiği anlamına gelir.",
          ""]
     if tip == "GEC":
-        s += ["NESİNE NE YAPTI: Takip etti, oranı %+.1f puan düzeltti." % k["dp_n"],
+        s += ["%s NE YAPTI: Takip etti, oranı %+.1f puan düzeltti." % (kitap.upper(), k["dp_n"]),
               "Yani haber doğru ama fiyat artık kapanmış."]
     else:
-        s += ["NESİNE NE YAPTI: Kıpırdamadı (%+.1f puan) - henüz geri kaldı." % k["dp_n"]]
+        s += ["%s NE YAPTI: Kıpırdamadı (%+.1f puan) - henüz geri kaldı." % (kitap.upper(), k["dp_n"])]
     s += ["GÜVEN: %d kitap%s, kitaplar %s, hareket %s" % (
               k.get("n_kitap", 0),
               " (Pinnacle onaylı)" if k.get("pin") else " (Pinnacle yok)",
               "hemfikir" if (k.get("sapma") or 0) <= MAX_SAPMA else "dağınık",
               "kalıcı" if k["dp_w"] >= k.get("dp_w_onceki", 0.0) else "yavaşlıyor"),
           "",
-          "FİYAT: Nesine %s @ %.2f | adil karşılığı %.2f | fark %%%+.1f"
-          % (k["sec"], k["oran_n"], adil, (k.get("ev") or 0) * 100),
+          "FİYAT: %s %s @ %.2f | adil karşılığı %.2f | fark %%%+.1f"
+          % (kitap, k["sec"], k["oran_n"], adil, (k.get("ev") or 0) * 100),
           "",
           "KARAR: %s" % KARAR.get(tip, ""),
-          "Geçerlilik: maça 20 dakika kalana kadar; Nesine oranı %.2f altına düşerse iptal." % adil,
+          "Geçerlilik: maça 20 dakika kalana kadar; %s oranı %.2f altına düşerse iptal." % (kitap, adil),
           "",
           "⚠ Test aşaması (hacim verisi henüz yok, kayma fiyattan okunuyor): en fazla 0,25 birim."]
     return chr(10).join(s)
