@@ -19,6 +19,7 @@ AGENT_DIR = Path(__file__).resolve().parent
 MAX_MESSAGE_LENGTH = 3900
 SCAN_TIMEOUT_SECONDS = 480
 AUTO_INTERVAL_SECONDS = 5 * 60
+CAKISMA_TAVANI = 20                   # 20 x 15 sn = 5 dk: Render mavi-yesil gecisi icin tolerans
 RADAR_ASAMALARI = (("60", 60 * 60, 30 * 60, "Maçın başlamasına 1 saat kaldı. Oran analize uyuyor."),
                    ("30", 30 * 60, 15 * 60, "Maçın başlamasına yarım saat kaldı. Oran analize uyuyor."),
                    ("15", 15 * 60, 0, "Maçın başlamasına 15 dakika kaldı. Oran analize uyuyor."))
@@ -326,6 +327,7 @@ def main():
     bot_info = validate_bot_token(token)
     print(f"Telegram botu doğrulandı: @{bot_info.get('username', 'kullanici-adi-yok')}", flush=True)
     offset = None
+    cakisma = 0                        # ust uste 409: yeniden dagitimda eski surum hala getUpdates yapiyor
     threading.Thread(target=otomatik_dongu, args=(token, allowed_user_ids), daemon=True).start()
     threading.Thread(target=acilis_dongu, args=(token, allowed_user_ids), daemon=True).start()
     print("BWM Telegram botu çalışıyor.", flush=True)
@@ -336,6 +338,7 @@ def main():
                 "getUpdates",
                 {"offset": offset, "timeout": 5, "allowed_updates": ["message"]},
             )
+            cakisma = 0
             for update in updates:
                 offset = update["update_id"] + 1
                 reply = response_for_update(update, allowed_user_ids)
@@ -357,7 +360,15 @@ def main():
         except (RuntimeError, KeyError, TypeError) as error:
             print(f"Bot döngüsü hatası: {error}", file=sys.stderr, flush=True)
             if isinstance(error, RuntimeError) and "HTTP 409" in str(error):
-                raise SystemExit("HTTP 409: başka bir bot süreci veya Telegram webhook'u getUpdates ile çakışıyor.") from None
+                cakisma += 1
+                if cakisma == 1:
+                    print("HTTP 409: eski surum hala getUpdates yapiyor; 15 sn arayla yeniden denenecek.",
+                          file=sys.stderr, flush=True)
+                if cakisma > CAKISMA_TAVANI:
+                    raise SystemExit("HTTP 409: baska bir bot sureci ya da webhook getUpdates ile cakisiyor "
+                                     "(%d denemede cozulmedi)." % CAKISMA_TAVANI) from None
+                time.sleep(15)
+                continue
             time.sleep(5)
 
 
