@@ -64,6 +64,8 @@ RADAR = [(360, "T-6sa"), (120, "T-2sa"), (60, "T-60dk"), (30, "T-30dk")]
 RADAR_TOL = 8
 DP_ESIK, DP_SESSIZ = 2.0, 1.0      # anlamli kayma / "kipirdamadi" bandi (yuzde puan)
 EV_ESIK, MIN_ORAN, MIN_P = 0.02, 1.30, 0.10
+HAREKET_ESIK = 2.0                 # dunya adil olasiliginda 'para aktı' sayilan kayma (yuzde puan)
+MESAJ_TAVANI = 5                   # tek taramada en fazla kac mesaj
 SEC = ["1", "X", "2"]
 SEC_AD = {"1": "Ev sahibi kazanır (MS 1)", "X": "Beraberlik (MS X)", "2": "Deplasman kazanır (MS 2)"}
 AY = ["Ocak", "Şubat", "Mart", "Nisan", "Mayıs", "Haziran", "Temmuz", "Ağustos", "Eylül",
@@ -393,9 +395,17 @@ def kaydet(max_lig=6, butce=3, saat=6.0, radar=False, sessiz=False):
                  "ev": round(ev, 4) if ev is not None else None, "hacim": "YOK",
                  "dk_kala": int((m["ts"] - simdi) / 60), "kademe": m.get("kademe")}
             satir.append(k)
-            if (hucre == "A" and ev is not None and ev >= EV_ESIK
-                    and m["oran"][j] >= MIN_ORAN and p_w >= MIN_P):
-                sinyal.append(k)
+            if p_w is None or p_w < MIN_P or m["oran"][j] < MIN_ORAN:
+                continue
+            if hucre == "A" and ev is not None and ev >= EV_ESIK:
+                k["tip"] = "DEGER"       # para aktı, Nesine gec kaldi, fiyat adilin USTUNDE
+            elif hucre == "A" and dp_w >= HAREKET_ESIK:
+                k["tip"] = "AKIS"        # para aktı, Nesine gec kaldi, ama fiyat hala adilin altinda
+            elif hucre == "B" and dp_w >= HAREKET_ESIK:
+                k["tip"] = "GEC"         # para aktı, Nesine de takip etti
+            else:
+                continue
+            sinyal.append(k)
     try:
         with open(yol, "a", encoding="utf-8") as f:
             for k in satir:
@@ -414,33 +424,47 @@ def kaydet(max_lig=6, butce=3, saat=6.0, radar=False, sessiz=False):
 
 
 # ------------------------------------------------------------------ mesaj
+BASLIK = {"DEGER": "🟢 PARA AKIŞI + DEĞER",
+          "AKIS": "🔵 PARA AKIŞI",
+          "GEC": "🟠 PARA AKTI, FİYAT KAÇTI"}
+KARAR = {"DEGER": "OYNA - fiyat hala adil değerin üstünde",
+         "AKIS": "KUÇUK PAY ya da GEÇ - yön doğru ama Nesine fiyatı hala adilin altında",
+         "GEC": "OYNAMA - Nesine de fiyatı düzeltti, değer kalmadı"}
+
+
 def _mesaj(k):
+    """Para akisinin yorumu: nereye yuklendi, fiyat ne yapti, ne anlama geliyor, ne kadar sure var."""
     d = datetime.fromtimestamp(k["esd_ms"] / 1000, TR)
     tarih = "%d %s %02d:%02d" % (d.day, AY[d.month - 1], d.hour, d.minute)
     dk = k["dk_kala"]
     sure = ("%d saat %d dakika" % (dk // 60, dk % 60)) if dk >= 60 else ("%d dakika" % dk)
+    tip = k.get("tip", "AKIS")
     onceki = k["p_w"] * 100 - k["dp_w"]
     adil = round(1.0 / k["p_w"], 2)
-    s = [
-        "\U0001F40B BALİNA SİNYALİ",
-        "%s - %s" % (k["hn"], k["an"]),
-        "%s \u00b7 %s" % (k["lig"] or "?", tarih),
-        "",
-        "\u2705 OYNA: %s @ %.2f (Nesine)" % (SEC_AD.get(k["sec"], k["sec"]), k["oran_n"]),
-        "",
-        "NEDEN:",
-        "1) Dünya piyasası bu tarafa para bastı: gerçek şans %%%.1f -> %%%.1f (+%.1f puan, %d bahis şirketi)"
-        % (onceki, k["p_w"] * 100, k["dp_w"], k["n_kitap"]),
-        "2) Nesine fiyatı kıpırdamadı (%+.1f puan) -> geç kaldı, oran hâlâ eski" % k["dp_n"],
-        "3) Bu oran dünyanın adil fiyatından (%.2f) %%%.1f yüksek = DEĞER" % (adil, (k["ev"] or 0) * 100),
-        "",
-        "\u23f1 SÜRE: Maça %s var. BEKLEME, şimdi oyna - bu fark genelde birkaç saatte kapanır." % sure,
-        "Son geçerlilik: maça 20 dakika kalana kadar. Nesine oranı %.2f altına düşerse iptal et." % adil,
-        "",
-        "\u26a0 Test aşaması (hacim onayı yok): en fazla 0,25 birim.",
-    ]
-    return "\n".join(s)
-
+    taraf = {"1": k["hn"], "2": k["an"], "X": "beraberlik"}.get(k["sec"], k["sec"])
+    s = [BASLIK.get(tip, tip),
+         "%s - %s" % (k["hn"], k["an"]),
+         "%s · %s · maça %s" % (k["lig"] or "?", tarih, sure),
+         "",
+         "PARA NEREYE AKTI: %s" % taraf.upper(),
+         "Dünya piyasasında %s'in gerçek şansı %%%.1f -> %%%.1f çıktı (+%.1f puan, %d bahis şirketi, Pinnacle ağırlıklı)."
+         % (taraf, onceki, k["p_w"] * 100, k["dp_w"], k["n_kitap"]),
+         "Bu kayma, bilgili paranın bu tarafa yüklendiği anlamına gelir.",
+         ""]
+    if tip == "GEC":
+        s += ["NESİNE NE YAPTI: Takip etti, oranı %+.1f puan düzeltti." % k["dp_n"],
+              "Yani haber doğru ama fiyat artık kapanmış."]
+    else:
+        s += ["NESİNE NE YAPTI: Kıpırdamadı (%+.1f puan) - henüz geri kaldı." % k["dp_n"]]
+    s += ["",
+          "FİYAT: Nesine %s @ %.2f | adil karşılığı %.2f | fark %%%+.1f"
+          % (k["sec"], k["oran_n"], adil, (k.get("ev") or 0) * 100),
+          "",
+          "KARAR: %s" % KARAR.get(tip, ""),
+          "Geçerlilik: maça 20 dakika kalana kadar; Nesine oranı %.2f altına düşerse iptal." % adil,
+          "",
+          "⚠ Test aşaması (hacim verisi henüz yok, kayma fiyattan okunuyor): en fazla 0,25 birim."]
+    return chr(10).join(s)
 
 def telegram_gonder(metinler, token=None, chat_id=None):
     tok = (token or os.environ.get("TELEGRAM_BOT_TOKEN") or "").strip()
@@ -459,18 +483,19 @@ def telegram_gonder(metinler, token=None, chat_id=None):
 
 
 def yeni_sinyaller(max_lig=6, butce=3, saat=6.0, radar=True):
-    """Bot icin: daha once gonderilmemis A-hucresi mesajlari (liste)."""
+    """Bot icin: daha once gonderilmemis para-akisi mesajlari (once DEGER, sonra AKIS, sonra GEC)."""
     gond = set(_json_oku(GONDERILDI, []))
+    oncelik = {"DEGER": 0, "AKIS": 1, "GEC": 2}
+    aday = [k for k in kaydet(max_lig, butce, saat, radar, sessiz=True)
+            if (k["anahtar"] + "|" + k.get("tip", "")) not in gond]
+    aday.sort(key=lambda k: (oncelik.get(k.get("tip"), 9), -abs(k["dp_w"])))
     out = []
-    for k in kaydet(max_lig, butce, saat, radar, sessiz=True):
-        if k["anahtar"] in gond:
-            continue
+    for k in aday[:MESAJ_TAVANI]:
         out.append(_mesaj(k))
-        gond.add(k["anahtar"])
+        gond.add(k["anahtar"] + "|" + k.get("tip", ""))
     if out:
         _json_yaz(GONDERILDI, sorted(gond))
     return out
-
 
 # ------------------------------------------------------------------ rapor
 def _kayitlar(gun=None, hepsi=False):
