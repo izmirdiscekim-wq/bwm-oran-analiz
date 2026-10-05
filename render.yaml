@@ -11,3 +11,5 @@ services:
         sync: false
       - key: TELEGRAM_ALLOWED_USER_IDS
         sync: false
+      - key: ODDS_API_KEY
+        sync: false

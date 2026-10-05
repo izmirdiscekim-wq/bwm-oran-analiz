@@ -97,11 +97,19 @@ def response_for_update(update, allowed_user_ids):
         return "Komut biçimi okunamadı. /yardim yazın."
 
     if command in ("/start", "/yardim", "/help"):
-        return "Komutlar:\n/taktik - aktif oran taktiklerini Nesine bülteninde tara\n/taktik <ad> - adı verilen taktiği tara\n/taktikler - kayıtlı taktikleri listele\n/taktik_acilis - bültendeki açılış oranı taktik maçlarını raporla"
+        return (chr(10).join(["Komutlar:", "/taktik - aktif oran taktiklerini Nesine bülteninde tara", "/taktik <ad> - adı verilen taktiği tara", "/taktikler - kayıtlı taktikleri listele", "/taktik_acilis - bültendeki açılış oranı taktik maçlarını raporla", "/balina - balina (bayat çizgi) raporu", "/balina tara - şimdi tara", "/balina tanila - durum"]))
     if command == "/test_tara":
         return TEST_TARA
     if command == "/taktik_acilis":
         return TAKTIK_ACILIS
+    if command == "/balina":
+        import balina
+        if arguments and arguments[0] in ("tara", "sinyal"):
+            m = balina.yeni_sinyaller()
+            return (chr(10).join(m) if m else "Yeni balina sinyali yok.")
+        if arguments and arguments[0] == "tanila":
+            return balina.tanila(yazdir=False)
+        return balina.rapor(yazdir=False)
     if command == "/taktikler":
         return run_cli(["taktik", "--liste"])
     if command == "/taktik":
@@ -224,6 +232,13 @@ def otomatik_tara(token, allowed_user_ids):
         save_analyzed(analyzed)
         bildirim += len(grup)
     print(f"[TARAMA] {bildirim} mac bildirildi. ({len(adaylar)} aday mac, 60 dk penceresinde)", flush=True)
+    try:                                  # balina katmani: radar kademesi yoksa API cagrisi yapilmaz
+        import balina
+        for metin in balina.yeni_sinyaller():
+            for user_id in allowed_user_ids:
+                send_message(token, user_id, metin)
+    except Exception as exc:
+        print(f"[BALINA] atlandi: {exc}", flush=True)
 
 
 def load_tracker():
