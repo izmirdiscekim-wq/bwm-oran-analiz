@@ -69,7 +69,12 @@ KADEME_ESIK = {"T-6sa": 3.0, "T-2sa": 2.5, "T-60dk": 2.0, "T-30dk": 2.0}  # erke
 MIN_KITAP = 6                      # Pinnacle yoksa en az bu kadar kitap onaylamali
 MAX_SAPMA = 0.04                   # kitaplar arasi std; ustunde "piyasa hemfikir degil" = gurultu
 GERI_DONUS = 1.0                   # son turda bu kadar geri dondiyse hareket kalici degil
-AKIS_EV_TABAN = -0.05              # EV bunun altindaysa hikaye guzel ama bahis kaybettirir: susturulur
+AKIS_EV_TABAN = -0.04              # bunun altinda mesaj yok (hikaye guzel, bahis kaybettirir)
+MARJ_TAVANI = 0.23                 # macin kendi vergisi bunu asiyorsa hic degerlendirilmez
+MARJ_UCUZ = 0.15                   # olculen bulten: maclarin %13'u bu seviyede = ucuz mac
+TIER = [(0.02, "🟢", "OYNA"),
+        (0.0, "🟡", "KÜÇÜK PAY (başa baş üstü, 0,25 birim)"),
+        (-0.04, "⚪", "BİLGİ - para bu tarafta ama fiyat yetmiyor")]
 MESAJ_TAVANI = 5                   # tek taramada en fazla kac mesaj
 SEC = ["1", "X", "2"]
 SEC_AD = {"1": "Ev sahibi kazanır (MS 1)", "X": "Beraberlik (MS X)", "2": "Deplasman kazanır (MS 2)"}
@@ -406,8 +411,10 @@ def _kalite(k):
         return False, "kitaplar hemfikir degil (sapma %.3f)" % k["sapma"]
     if k["dp_w"] < k.get("dp_w_onceki", 0.0) - GERI_DONUS:
         return False, "hareket geri donuyor (%.1f -> %.1f)" % (k.get("dp_w_onceki", 0.0), k["dp_w"])
-    if tip == "AKIS" and (k.get("ev") or -1) < AKIS_EV_TABAN:
-        return False, "fiyat cok kotu (EV %+.1f%%)" % ((k.get("ev") or 0) * 100)
+    if (k.get("marj_n") or 0) > MARJ_TAVANI:
+        return False, "maç vergisi çok yüksek (%%%.1f)" % ((k.get("marj_n") or 0) * 100)
+    if (k.get("ev") or -1) < AKIS_EV_TABAN:
+        return False, "fiyat çok kötü (EV %+.1f%%)" % ((k.get("ev") or 0) * 100)
     return True, "OK"
 
 
@@ -498,13 +505,12 @@ def kaydet(max_lig=6, butce=3, saat=6.0, radar=False, sessiz=False):
 
 
 # ------------------------------------------------------------------ mesaj
-BASLIK = {"DEGER": "🟢 PARA AKIŞI + DEĞER",
-          "AKIS": "🔵 PARA AKIŞI",
-          "GEC": "🟠 PARA AKTI, FİYAT KAÇTI"}
-KARAR = {"DEGER": "OYNA - fiyat hala adil değerin üstünde",
-         "AKIS": "KUÇUK PAY ya da GEÇ - yön doğru ama Nesine fiyatı hala adilin altında",
-         "GEC": "OYNAMA - Nesine de fiyatı düzeltti, değer kalmadı"}
-
+def _tier(ev):
+    """EV kademesi -> (simge, karar). Sinyal her zaman gonderilir; karar fiyata gore degisir."""
+    for esik, simge, karar in TIER:
+        if (ev or -1) >= esik:
+            return simge, karar
+    return "🔴", "OYNAMA - fiyat değeri yemiş"
 
 def _mesaj(k):
     """Para akisinin yorumu: nereye yuklendi, fiyat ne yapti, ne anlama geliyor, ne kadar sure var."""
@@ -517,7 +523,8 @@ def _mesaj(k):
     adil = round(1.0 / k["p_w"], 2)
     taraf = {"1": k["hn"], "2": k["an"], "X": "beraberlik"}.get(k["sec"], k["sec"])
     kitap = k.get("kitap") or "iddaa"
-    s = [BASLIK.get(tip, tip),
+    simge, karar = _tier(k.get("ev"))
+    s = ["%s PARA AKIŞI - %s" % (simge, karar.split(" (")[0].split(" - ")[0]),
          "%s - %s" % (k["hn"], k["an"]),
          "%s · %s · maça %s" % (k["lig"] or "?", tarih, sure),
          "",
@@ -540,7 +547,10 @@ def _mesaj(k):
           "FİYAT: %s %s @ %.2f | adil karşılığı %.2f | fark %%%+.1f"
           % (kitap, k["sec"], k["oran_n"], adil, (k.get("ev") or 0) * 100),
           "",
-          "KARAR: %s" % KARAR.get(tip, ""),
+          "KARAR: %s" % karar,
+          "MAÇ VERGİSİ: %s bu maçta %%%.1f kesiyor (bülten medyanı %%17,6)%s"
+          % (kitap, (k.get("marj_n") or 0) * 100,
+             " - ucuz maç" if (k.get("marj_n") or 1) <= MARJ_UCUZ else ""),
           "Geçerlilik: maça 20 dakika kalana kadar; %s oranı %.2f altına düşerse iptal." % (kitap, adil),
           "",
           "⚠ Test aşaması (hacim verisi henüz yok, kayma fiyattan okunuyor): en fazla 0,25 birim."]
