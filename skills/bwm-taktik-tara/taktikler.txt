@@ -36,6 +36,7 @@ eklendi: 2026-09-21
 hedef: Maç sonu 4,5 Üst
 oyna: u45
 basari: top>=5
+aktif: hayir
 orijinal: 4,5 Üst oranı 4,20-5,10; 1. Yarı 1 ve 1,5 Üst oranı 5,40-6,20; 4-5 gol aralığı 2,80-3,10; böyle olursa maç sonu 4,5 üst ara
 u45            4.20-5.10   # 4,5 Üst
 iy1u15         5.40-6.20   # 1. Yarı 1 ve 1,5 Üst (İY sonucu 1 + İY 1.5 Üst kombine pazarı; yorum, video özetinden)
@@ -47,6 +48,7 @@ eklendi: 2026-09-21
 hedef: İlk yarı karşılıklı gol Var
 oyna: iykg
 basari: iykg
+aktif: hayir
 orijinal: İlk yarı karşılıklı gol var 3.25-3.48; ilk ve ikinci yarı karşılıklı gol var 9.80-10.80; 6+ gol 8.42-8.60; ilk yarı karşılıklı gol varı ara
 iykg           3.25-3.48   # İlk Yarı Karşılıklı Gol Var
 iy2ykg         9.80-10.80  # 1. Yarı ve 2. Yarıda Karşılıklı Gol Var (ikisi de Var; N3, veriyle doğrulandı)
@@ -91,6 +93,7 @@ eklendi: 2026-09-22
 hedef: İlk yarı deplasman önde (İY 2), maç sonu ev sahibi kazanır (MS 1)
 oyna: ms1
 basari: iydep>iyev and ev>dep
+aktif: hayir
 orijinal: 1. Yarı 2 oranı 4.24-4.38; MS 1 oranı 1.48-1.52; MS 1 ve 3.5 Üst oranı 3.40-3.44; ilk yarıyı deplasmanın önde kapatıp maçı ev sahibinin kazanması hedeflenir
 iyres2         4.24-4.38  
 ms1            1.48-1.52  
@@ -112,6 +115,7 @@ eklendi: 2026-09-22
 hedef: Maç sonu 4,5 Alt (kapanış oranıyla)
 oyna: a45
 basari: top<=4
+aktif: hayir
 orijinal: Bahislerinizi yaparken maçın başlamasına 5-10 dakika kala güncellenen kapanış oranlarını baz almanız gerekir. 4,5 Gol Altı: oranın 3,30-3,40 arasında olması. İlk Yarı Gol Durumu: ev sahibi favoriyse İY1 ve 1,5 Üst, deplasman favoriyse İY2 ve 1,5 Üst oranının 5,90-6,30 arasında olması
 a45            3.30-3.40  
 iygolfav       5.90-6.30  
@@ -122,6 +126,7 @@ eklendi: 2026-09-22
 hedef: Favori takım İY'yi kaybedip MS'i kazanır (2/1 ev favoriyse, 1/2 deplasman favoriyse)
 oyna: msfav msalt
 basari: (iydep>iyev and ev>dep) or (iyev>iydep and dep>ev)
+aktif: hayir
 orijinal: Oran takibiyle 2/1 (İY2/MS1) ve 1/2 (İY1/MS2) skorlarını yakalama taktiği. Favori takım oranı 1.60-1.69 arasında; favori olmayan (diğer) takım oranı sabit 4.50 veya 4.70-4.80 aralığında olmalı
 msfav          1.60-1.69  
 msalt          4.45-4.55|4.70-4.80
@@ -216,9 +221,178 @@ eklendi: 2026-10-03
 hedef: 2.5Ü+KGVar 1.70-1.80 + İY2.5Ü 5.00-5.50 + Dep İY0.5Ü 2.00-2.20 + TopGol0-1 4.05-4.30 + İY&2Y KGVar/Var 11.75-12.00 -> İY 1.5 Üst
 oyna: iyu15
 basari: iytop>=2
+aktif: hayir
 orijinal: KAPANIŞ ORANLARI İLE İY 1.5 ÜST: 5 koşul (2.5Ü+KGVar, İY2.5Ü, Ev/Dep İY0.5Ü, TopGol0-1, İY+2Y KGVar/Var) hepsi sağlanırsa İY 1.5 Üst
 u25kg          1.70-1.80  
 iyu25          5.00-5.50  
 depiyu05       2.00-2.20  
 tg01           4.05-4.30  
 iy2ykg         11.75-12.00
+
+[YT SkorHanesi 4,5 Üst]
+kategori: Oran Analizi
+eklendi: 2026-10-05
+hedef: 4,5 Üst (kaynak: SKOR HANESİ / YouTube)
+oyna: u45
+basari: top>=5
+not: 05.10.2026 testi: 2 koşulla 4 maç, 0 tuttu (ROI -100%, n<30 kanıt değil). 3. koşul 'Ev sahibi 2,5 Üst' Nesine'de açılmıyor (takım alt/üst yalnız 0,5), o yüzden eksik test.
+orijinal: 4,5 üst oranı 2.60-2.75 + ev sahibi 2,5 üst oranı 2.42-2.52 + maç skoru 4-2 oranı 23.00-28.50 ise 4,5 üst oyna
+u45            2.45-2.70   # videoda 2.60-2.75 (iddaa); Nesine çerçevesine çevrildi
+t777/0/9       21.69-27.96 # Maç skoru 4-2: videoda 23.00-28.50
+
+[YT İDDAATV İY 0,5 Üst]
+kategori: Oran Analizi
+eklendi: 2026-10-05
+hedef: İlk yarı 0,5 Üst (kaynak: İDDAATV / YouTube, kapanış oranı)
+oyna: iyu05
+basari: iytop>=1
+not: 05.10.2026 testi: 4 maç uydu, 2'si sonuçlu, 2'si tuttu (n çok küçük, kanıt değil). İY/MS pazarı arşivde yalnız 107 sonuçlu maçta açık -> nadir tetiklenir, açık bırakıldı.
+orijinal: İY/MS 1-1 oranı 1.90-2.00 arasında VE toplam gol 2-3 oranı 1.75-1.85 arasındaysa ilk yarı 0,5 üst oyna; kapanış oranına bak
+t5/0/1         1.79-1.96   # İY/MS 1/1: videoda 1.90-2.00
+tg23           1.65-1.81   # Toplam gol 2-3: videoda 1.75-1.85
+
+[YT İDDAA MAN +6 Gol]
+kategori: Oran Analizi
+eklendi: 2026-10-05
+hedef: 6+ gol (kaynak: İDDAA MAN / YouTube)
+oyna: tg6
+basari: top>=6
+aktif: hayir
+not: 05.10.2026 testi: arşivde (897 sonuçlu maç) 0 maç uydu - bu oran üçlüsü pratikte oluşmuyor.
+orijinal: 2,5 üst 1.22 + 3,5 üst 1.50 + 4,5 üst 2.73 oranları birlikteyse +6 gol (ya da en az 3,5 üst) oyna
+u25            1.15-1.20   # videoda 1.22
+u35            1.41-1.47   # videoda 1.50
+u45            2.57-2.68   # videoda 2.73
+
+[YT Kontrivo Skor Korelasyonu (ev fav)]
+kategori: Oran Analizi
+eklendi: 2026-10-05
+hedef: 2,5 Üst + KG Var (kaynak: Kontrivo Plus / YouTube)
+oyna: u25 kgvar
+basari: top>=3
+not: 05.10.2026 testi: 11 maç uydu, 6 sonuçlu -> 2,5 Üst 5/6, KG Var 2/6 (n<30, kanıt değil).
+orijinal: Favorinin 2-1 skor oranı 7 civarı, 1-1 skoru da 7 civarı, 0-0 skoru 10 üstü ise KG Var + üst oyna
+t777/0/3       6.50-7.50   # 2-1 skoru ~7.00
+t777/0/14      6.50-8.00   # 1-1 skoru ~7.00
+t777/0/13      10.00-99.00 # 0-0 skoru 10.00 üstü
+
+[YT Kontrivo Skor Korelasyonu (dep fav)]
+kategori: Oran Analizi
+eklendi: 2026-10-05
+hedef: 2,5 Üst + KG Var, deplasman favori (kaynak: Kontrivo Plus / YouTube)
+oyna: u25 kgvar
+basari: top>=3
+not: 05.10.2026 testi: 1 maç uydu, sonuçlu 0.
+t777/0/19      6.50-7.50   # 1-2 skoru ~7.00
+t777/0/14      6.50-8.00   # 1-1 skoru ~7.00
+t777/0/13      10.00-99.00 # 0-0 skoru 10.00 üstü
+
+[YT OranAnalizTV MS1 açılış -> KG Var]
+kategori: Oran Analizi
+eklendi: 2026-10-05
+hedef: KG Var (OranAnalizTV: MS1 açılış oranı 1.90/2.05/2.48/2.63)
+oyna: kgvar
+basari: kg
+aktif: hayir
+not: ÇÜRÜTÜLDÜ 05.10.2026: Mackolik arşivi n=395 -> %54 (taban %55), ROI -18.0%±3.9. Nesine arşivi n=163 -> %55, ROI -18.2%. Videodaki %90 iddiası tutmuyor.
+orijinal: MS 1 açılış oranı 1.90, 2.05, 2.48 veya 2.63 ise KG Var gelir (31 maçta 28)
+t1/0/1@ilk     1.79-1.86|1.93-2.01|2.34-2.43|2.48-2.58 # videoda iddaa açılışı 1.90, 2.05, 2.48, 2.63
+
+[YT OranAnalizTV MS1 açılış -> 2,5 Üst]
+kategori: Oran Analizi
+eklendi: 2026-10-05
+hedef: 2,5 Üst (OranAnalizTV: MS1 açılış 2.52/2.56/2.73/2.79/2.88)
+oyna: u25
+basari: top>=3
+aktif: hayir
+not: ÇÜRÜTÜLDÜ 05.10.2026: Mackolik n=260 -> %55 (taban %56), ROI -11.2%±5.9. Nesine n=90 -> %58, ROI -12.5%.
+orijinal: MS 1 açılış oranı 2.52/2.56/2.73/2.79/2.88 ise 2,5 üst gelir (26 maçta 24)
+t1/0/1@ilk     2.38-2.47|2.41-2.51|2.57-2.68|2.63-2.74|2.72-2.83 # videoda 2.52, 2.56, 2.73, 2.79, 2.88
+
+[YT OranAnalizTV MS1 açılış -> MS 2]
+kategori: Oran Analizi
+eklendi: 2026-10-05
+hedef: MS 2 (OranAnalizTV: MS1 açılış 2.51/2.62)
+oyna: ms2
+basari: dep>ev
+aktif: hayir
+not: KANIT YOK 05.10.2026: Mackolik n=156 -> %46 (taban %33), ROI -2.8%±8.6; Nesine n=68 -> %46, ROI -3.7%. Ailenin en iyisi ama hâlâ negatif ve 0'dan ayırt edilemiyor; komşu bant (MS1 2.57-2.90) +3.6% veriyor -> gürültü.
+orijinal: MS 1 açılış oranı 2.51 veya 2.62 ise maç sonucu 2 gelir (9 maçta 8)
+t1/0/1@ilk     2.37-2.46|2.47-2.57 # videoda 2.51 ve 2.62
+
+[YT OranAnalizTV MS1 açılış -> Dep 1,5 Üst]
+kategori: Oran Analizi
+eklendi: 2026-10-05
+hedef: Deplasman 1,5 Üst (OranAnalizTV: MS1 açılış 2.72/2.97)
+oyna: t256/1.5/2
+basari: dep>=2
+aktif: hayir
+not: ÇÜRÜTÜLDÜ 05.10.2026: Mackolik n=125 -> %38 = taban %38; Nesine n=36 -> %42 (taban %40). Oyna pazarı (deplasman 1,5 A/Ü) Nesine'de zaten açılmıyor.
+orijinal: MS 1 açılış oranı 2.72 veya 2.97 ise deplasman 1,5 üst gelir (7 maçta 7)
+t1/0/1@ilk     2.56-2.67|2.80-2.91 # videoda 2.72 ve 2.97
+
+[YT OranAnalizTV TG0-1 açılış -> MS 0]
+kategori: Oran Analizi
+eklendi: 2026-10-05
+hedef: MS Beraberlik (OranAnalizTV: Toplam gol 0-1 açılış 2.52/2.83)
+oyna: msx
+basari: ev==dep
+aktif: hayir
+not: ÇÜRÜTÜLDÜ 05.10.2026: Nesine n=30 -> %27 (taban %21), ROI -20.1%±24.6.
+orijinal: Toplam gol 0-1 açılış oranı 2.52 veya 2.83 ise maç 0 (beraberlik) biter (12 maçta 10)
+t43/0/1@ilk    2.38-2.47|2.67-2.78 # videoda 2.52 ve 2.83
+
+[YT OranAnalizTV TG0-1 açılış -> İY 0]
+kategori: Oran Analizi
+eklendi: 2026-10-05
+hedef: İlk yarı beraberlik (OranAnalizTV: Toplam gol 0-1 açılış 2.15/2.23/2.55/2.67)
+oyna: t7/0/2
+basari: iyev==iydep
+aktif: hayir
+not: KANIT YOK 05.10.2026: n=31 -> %55 (taban %40), ROI -1.3%±16.1. Ama aynı bandın TAMAMI (2.03-2.62) da ROI -8.5% veriyor, komşu bantlar -13%/-45% -> sinyal bandın kendisinde (düşük gol beklentisi), videodaki tekil değerlerde değil.
+orijinal: Toplam gol 0-1 açılış oranı 2.23/2.55/2.67/2.15 ise ilk yarı 0 biter (8 maçta 8)
+t43/0/1@ilk    2.03-2.11|2.10-2.19|2.41-2.50|2.52-2.62 # videoda 2.15, 2.23, 2.55, 2.67
+
+[YT OranAnalizTV İY2 oranı -> İY 1,5 Üst]
+kategori: Oran Analizi
+eklendi: 2026-10-05
+hedef: İY 1,5 Üst (OranAnalizTV: İY sonucu 2 oranı 2.20/2.34/2.52/2.88)
+oyna: iyu15
+basari: iytop>=2
+aktif: hayir
+not: KANIT YOK 05.10.2026: n=79 -> %47 (taban %39), ROI -3.2%±12.5. Bandın tamamı (2.07-2.83) -8.5%, komşu bantlar -42%/-24% -> yine band etkisi, tekil değer değil.
+orijinal: İlk yarı 2 oranı 2.20/2.34/2.52/2.88 ise ilk yarı 1,5 üst gelir (kapanış oranı)
+iyres2         2.07-2.16|2.21-2.30|2.38-2.47|2.72-2.83 # videoda kapanış 2.20, 2.34, 2.52, 2.88
+
+[YT OranAnalizTV İY2 2.95-3.05 -> 3,5 Alt]
+kategori: Oran Analizi
+eklendi: 2026-10-05
+hedef: 3,5 Alt / MS 0 (OranAnalizTV: İY sonucu 2 oranı 2.95-3.05)
+oyna: a35
+basari: top<=3
+aktif: hayir
+not: ÇÜRÜTÜLDÜ 05.10.2026: n=48 -> 3,5 Alt %67 (taban %63) ROI -19.9%; MS 0 %25; İY 0 %40 (taban %40). 'Tamamı 3,5 alt' iddiası yanlış.
+orijinal: İlk yarı 2 oranı 2.95 (veya 3.05) ise 10 maçın 9'u İY 0, 7'si MS 0, tamamı 3,5 alt biter
+iyres2         2.78-2.89|2.88-2.99 # videoda 2.95 ve 3.05
+
+[YT OranAnalizTV İY2 3.90 -> İY 0,5 Üst]
+kategori: Oran Analizi
+eklendi: 2026-10-05
+hedef: İY 0,5 Üst (OranAnalizTV: İY sonucu 2 oranı 3.90)
+oyna: iyu05
+basari: iytop>=1
+aktif: hayir
+not: ÇÜRÜTÜLDÜ 05.10.2026: n=28 -> %79 ama taban %71, ROI -10.1%±15.3 (oran zaten 1.2-1.3).
+orijinal: İlk yarı 2 oranı 3.90 ise 8 maçın 7'si ilk yarı 0,5 üst biter
+iyres2         3.68-3.83   # videoda 3.90
+
+[YT OranAnalizTV İY2 4.00 -> 3,5 Alt]
+kategori: Oran Analizi
+eklendi: 2026-10-05
+hedef: 3,5 Alt (OranAnalizTV: İY sonucu 2 oranı 4.00)
+oyna: a35
+basari: top<=3
+aktif: hayir
+not: ÇÜRÜTÜLDÜ 05.10.2026: n=26 -> %58 (taban %63), ROI -42.8%±20.7.
+orijinal: İlk yarı 2 oranı 4.00 ise 16 maçın 15'i 3,5 alt biter
+iyres2         3.77-3.92   # videoda 4.00
