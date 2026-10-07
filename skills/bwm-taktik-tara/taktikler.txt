@@ -60,6 +60,7 @@ eklendi: 2026-09-21
 hedef: Maç sonu 4,5 Üst
 oyna: u45
 basari: top>=5
+aktif: hayir
 orijinal: iki yarıda da 1,5 üst evet 5,20-5,40; 1. yarı ev sahibi 0,5 üst 1,95-2,12; toplam 4-5 gol 3,60-3,90; maç sonu 4,5 üst ara
 ciftu15        5.20-5.40   # İki yarıda da 1,5 Üst: Evet
 eviyu05        1.95-2.12   # 1. Yarı Ev Sahibi 0,5 Üst
@@ -71,6 +72,7 @@ eklendi: 2026-09-21
 hedef: İlk yarı skoru 1-1
 oyna: iyskor11
 basari: iyev==1 and iydep==1
+aktif: hayir
 orijinal: İlk yarı 1-1 skoru açılış oranı 8.00-8.92; ev sahibi hangi yarıda daha çok gol atar: birinci yarı 2.70-2.90; ilk yarı karşılıklı gol var 4.20-4.50; ilk yarı skor 1-1 ara
 iyskor11@ilk   8.00-8.92   # İlk Yarı 1-1 Skoru, AÇILIŞ oranı
 evyari1        2.70-2.90   # Ev Sahibi Hangi Yarıda Daha Çok Gol Atar: 1. yarı
@@ -82,6 +84,7 @@ eklendi: 2026-09-21
 hedef: Maç sonu 6+ gol
 oyna: tg6
 basari: top>=6
+aktif: hayir
 orijinal: 6+ gol 8.60-8.84; ikinci yarı karşılıklı gol var 2.90-3.12; iki yarıda da 1.5 üst 3.80-4.20; maç sonu +6 gol ara
 tg6            8.60-8.84   # 6+ Gol
 ykg2           2.90-3.12   # İkinci Yarı Karşılıklı Gol Var
@@ -105,6 +108,7 @@ eklendi: 2026-09-22
 hedef: Maç sonu 4,5 Üst (kapanış oranıyla)
 oyna: u45
 basari: top>=5
+aktif: hayir
 orijinal: Bahislerinizi yaparken maçın başlamasına 5-10 dakika kala güncellenen kapanış oranlarını baz almanız gerekir. 4,5 Gol Üstü: oranın 4,80-5,30 arasında olması. İlk Yarı Gol Durumu: ev sahibi favoriyse İY1 ve 1,5 Üst, deplasman favoriyse İY2 ve 1,5 Üst oranının 5,90-6,30 arasında olması
 u45            4.80-5.30  
 iygolfav       5.90-6.30  
@@ -137,6 +141,7 @@ eklendi: 2026-10-01
 hedef: Karşılıklı Gol Var (2-2 Skor Oranı ile +6 Gol Oranı birbirine yakınsa)
 oyna: kgvar
 basari: kg
+aktif: hayir
 not: Risk derecelendirmesi: fark 0'a yaklaştıkça KG Var güven puanı yükselir (EV garantisi değil, oranlar hâlâ aynı marjın içinde). Kullanıcının hedefi kickoff'tan ~1 saat önceki oran; sistemde bu taktiğe özel ayrı bir T-60dk penceresi yok, tüm taktikler gibi genel KAPANIŞ (kickoff'a <=20dk) / GÜNCEL ayrımıyla raporlanır - maça 50-70 dk kala yeniden taranması en isabetli an.
 orijinal: TAKTİK FİLTRESİ: 2:2 / +6 GOL KORELASYONU. Kural: Maç başlamadan 1 saat önceki oranlar kontrol edilir. Koşul: |(2-2 Skor Oranı) - (+6 Gol Oranı)| <= 0.60 (oranlar birbirine çok yakın/denk olmalı). Aksiyon: koşul sağlanıyorsa ana seçim KG VAR değerlendirilir. Risk derecelendirmesi: oranlar arası fark daraldıkça KG VAR güven oranı yükselir.
 fark skor22 tg6 0.00-0.60   # 2-2 Skor Oranı ile +6 Gol Oranı arasındaki fark
@@ -156,7 +161,7 @@ kategori: Oran Analizi
 eklendi: 2026-10-02
 hedef: İY/MS favori-kaybeder 20.00-20.99 + 0-1Gol 4.00-4.99 + 6+Gol 7.00-7.99 -> KG Var
 oyna: kgvar
-basari: top>=3
+basari: kg
 orijinal: DUMMY CASE 1: Oran_X 20-20.99, +6Gol 7-7.99 ve 0-1Gol 4-4.99 ise KG VAR
 iymsfav        20.00-20.99
 tg01           4.00-4.99  
@@ -167,20 +172,20 @@ kategori: Oran Analizi
 eklendi: 2026-10-02
 hedef: İY/MS favori-kaybeder 21.00-21.99 + 0-1Gol 5.00-5.99 -> 3.5 Üst
 oyna: u35
-basari: top>=3
+basari: top>=4
 orijinal: DUMMY CASE 2: Oran_X 21-21.99, 0-1Gol 5-5.99 ise 3.5 Gol Üstü
-iymsfav        21.00-21.99
-tg01           5.00-5.99  
+iymsfav        20.50-22.48
+tg01           4.50-6.49  
 
 [İY-MS Korelasyon B2 (3.5Üst-6gol)]
 kategori: Oran Analizi
 eklendi: 2026-10-02
 hedef: İY/MS favori-kaybeder 21.00-21.99 + 6+Gol 6.00-6.99 -> 3.5 Üst
 oyna: u35
-basari: top>=3
+basari: top>=4
 orijinal: DUMMY CASE 2: Oran_X 21-21.99, +6Gol 6-6.99 ise 3.5 Gol Üstü
-iymsfav        21.00-21.99
-tg6            6.00-6.99  
+iymsfav        20.50-22.48
+tg6            5.50-7.49  
 
 [İY-MS Korelasyon B3 (2.5Alt)]
 kategori: Oran Analizi
@@ -188,6 +193,7 @@ eklendi: 2026-10-02
 hedef: İY/MS favori-kaybeder 21.00-21.99 + 6+Gol 7.00-7.99 -> 2.5 Alt
 oyna: a25
 basari: top<=2
+aktif: hayir
 orijinal: DUMMY CASE 2: Oran_X 21-21.99, +6Gol 7-7.99 ise 2.5 Gol Altı
 iymsfav        21.00-21.99
 tg6            7.00-7.99  
@@ -198,6 +204,7 @@ eklendi: 2026-10-02
 hedef: İY/MS favori-kaybeder 22.00-22.99 + 6+Gol 8.00-9.99 -> 2.5 Üst
 oyna: u25
 basari: top>=3
+aktif: hayir
 orijinal: DUMMY CASE 3: Oran_X 22-22.99, +6Gol 8-9.99 ise 2.5 Gol Üstü
 iymsfav        22.00-22.99
 tg6            8.00-9.99  
@@ -208,6 +215,7 @@ eklendi: 2026-10-03
 hedef: 2.5Ü+KGVar 1.70-1.80 + İY2.5Ü 5.00-5.50 + Ev İY0.5Ü 2.00-2.20 + TopGol0-1 4.05-4.30 + İY&2Y KGVar/Var 11.75-12.00 -> İY 1.5 Üst
 oyna: iyu15
 basari: iytop>=2
+aktif: hayir
 orijinal: KAPANIŞ ORANLARI İLE İY 1.5 ÜST: 5 koşul (2.5Ü+KGVar, İY2.5Ü, Ev/Dep İY0.5Ü, TopGol0-1, İY+2Y KGVar/Var) hepsi sağlanırsa İY 1.5 Üst
 u25kg          1.70-1.80  
 iyu25          5.00-5.50  
@@ -235,6 +243,7 @@ eklendi: 2026-10-05
 hedef: 4,5 Üst (kaynak: SKOR HANESİ / YouTube)
 oyna: u45
 basari: top>=5
+aktif: hayir
 not: 05.10.2026 testi: 2 koşulla 4 maç, 0 tuttu (ROI -100%, n<30 kanıt değil). 3. koşul 'Ev sahibi 2,5 Üst' Nesine'de açılmıyor (takım alt/üst yalnız 0,5), o yüzden eksik test.
 orijinal: 4,5 üst oranı 2.60-2.75 + ev sahibi 2,5 üst oranı 2.42-2.52 + maç skoru 4-2 oranı 23.00-28.50 ise 4,5 üst oyna
 u45            2.45-2.70   # videoda 2.60-2.75 (iddaa); Nesine çerçevesine çevrildi
@@ -248,8 +257,8 @@ oyna: iyu05
 basari: iytop>=1
 not: 05.10.2026 testi: 4 maç uydu, 2'si sonuçlu, 2'si tuttu (n çok küçük, kanıt değil). İY/MS pazarı arşivde yalnız 107 sonuçlu maçta açık -> nadir tetiklenir, açık bırakıldı.
 orijinal: İY/MS 1-1 oranı 1.90-2.00 arasında VE toplam gol 2-3 oranı 1.75-1.85 arasındaysa ilk yarı 0,5 üst oyna; kapanış oranına bak
-t5/0/1         1.79-1.96   # İY/MS 1/1: videoda 1.90-2.00
-tg23           1.65-1.81   # Toplam gol 2-3: videoda 1.75-1.85
+t5/0/1         1.71-2.04  
+tg23           1.57-1.89  
 
 [YT İDDAA MAN +6 Gol]
 kategori: Oran Analizi
@@ -272,9 +281,9 @@ oyna: u25 kgvar
 basari: top>=3
 not: 05.10.2026 testi: 11 maç uydu, 6 sonuçlu -> 2,5 Üst 5/6, KG Var 2/6 (n<30, kanıt değil).
 orijinal: Favorinin 2-1 skor oranı 7 civarı, 1-1 skoru da 7 civarı, 0-0 skoru 10 üstü ise KG Var + üst oyna
-t777/0/3       6.50-7.50   # 2-1 skoru ~7.00
-t777/0/14      6.50-8.00   # 1-1 skoru ~7.00
-t777/0/13      10.00-99.00 # 0-0 skoru 10.00 üstü
+t777/0/3       6.25-7.75  
+t777/0/14      6.12-8.38  
+t777/0/13      7.50-99.00 
 
 [YT Kontrivo Skor Korelasyonu (dep fav)]
 kategori: Oran Analizi
@@ -282,6 +291,7 @@ eklendi: 2026-10-05
 hedef: 2,5 Üst + KG Var, deplasman favori (kaynak: Kontrivo Plus / YouTube)
 oyna: u25 kgvar
 basari: top>=3
+aktif: hayir
 not: 05.10.2026 testi: 1 maç uydu, sonuçlu 0.
 t777/0/19      6.50-7.50   # 1-2 skoru ~7.00
 t777/0/14      6.50-8.00   # 1-1 skoru ~7.00
