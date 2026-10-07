@@ -4,3 +4,7 @@ __pycache__/
 agents/data/tmp/
 *.bak
 analyzed_matches.json
+*.log
+agents/data/balina/cache/
+agents/data/flash_stat_cache.json
+agents/data/capraz/odds_api_key.txt
