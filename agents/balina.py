@@ -21,6 +21,7 @@ farkli anlarda cekilir, Render'da kalici disk yok -> JSONL log gecicidir, kalici
 """
 import argparse
 import difflib
+import io
 import json
 import math
 import os
@@ -35,6 +36,7 @@ import requests
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, SCRIPT_DIR)
 import aksiyon as AKS
+import marj as MARJ          # lig/pazar bazli dinamik marj tabani
 import nesine as N
 
 try:
@@ -60,6 +62,17 @@ MAX_AGE = 4 * 3600                 # kitabin son guncellemesi bundan eskiyse say
 SPORTS_TTL, EVENTS_TTL, ODDS_TTL = 12 * 3600, 3600, 20 * 60
 GUNLUK_TAVAN = 12                  # gunluk azami kredi (12 x 30 = 360/ay < 500)
 RESERVE = 60                       # API kotasi bunun altina inerse odeme yapilmaz
+
+# The Odds API KREDI kurali: ucret = istenen pazar sayisi x bolge sayisi. Uc pazar x eu =
+# 3 kredi/lig -> gunluk 12 kredi tavani 4 LIGE denk gelir (kullanicinin "4 kritik lig x 3
+# pazar" butcesi). spreads (Asya handikabi) CEKILIR ve LOGLANIR ama sinyal uretmez: iddaa'nin
+# "Handikapli Mac Sonucu" pazari 3 secenekli (1/X/2), dunyadaki Asya handikabi 2 secenekli ve
+# beraberlik iadeli - dogrulanmamis bir cevrim uydurmak yerine veri biriktirilir.
+PAZARLAR_API = ("h2h", "totals", "spreads")
+KREDI_LIG = len(PAZARLAR_API)          # lig basina kredi maliyeti
+AU_HAT = 2.5                           # dunya tarafinda karsilastirilan Alt/Ust hatti
+AU_T, AU_N = 12, {"Alt": "1", "Üst": "2"}   # Nesine: t=12 sov=2.5, '1'=Alt '2'=Üst
+PAZAR_AD = {"1X2": "Maç Sonucu", "AU25": "Alt/Üst 2.5"}
 
 RADAR = [(360, "T-6sa"), (120, "T-2sa"), (60, "T-60dk"), (30, "T-30dk")]
 RADAR_TOL = 8
@@ -99,8 +112,27 @@ def _json_yaz(yol, veri):
         json.dump(veri, f, ensure_ascii=False)
 
 
+ANAHTAR_DOSYALARI = (
+    os.path.join(SCRIPT_DIR, "data", "odds_api.key"),
+    os.path.join(os.path.expanduser("~"), ".claude", "agents", "data", "odds_api.key"),
+)
+
+
 def _anahtar():
-    return (os.environ.get("ODDS_API_KEY") or "").strip()
+    """Once env (Render boyle veriyor), sonra yerel anahtar dosyasi (yerel testler icin).
+    Anahtar hicbir zaman ekrana/loga yazilmaz."""
+    k = (os.environ.get("ODDS_API_KEY") or "").strip()
+    if k:
+        return k
+    for yol in ANAHTAR_DOSYALARI:
+        try:
+            with io.open(yol, encoding="utf-8") as f:
+                k = f.read().strip()
+            if k:
+                return k
+        except OSError:
+            continue
+    return ""
 
 
 def _get(path, **params):
@@ -196,8 +228,10 @@ def nesine_1x2(saat=6.0, alt_dk=20):
         oran = [o[k] for k in ks]
         if any((not x or x <= 1.0) for x in oran):
             continue
+        au = N._mk(e, AU_T, AU_HAT) or {}
         out.append({"ts": e["esd"], "esd_ms": e["esd_ms"], "home": e["hn"], "away": e["an"],
-                    "lig": e["lig"], "oran": oran})
+                    "lig": e["lig"], "oran": oran,
+                    "au25": {ad: au.get(n) for ad, n in AU_N.items() if au.get(n)}})
     return out, taze
 
 
@@ -222,8 +256,20 @@ def iddaa_1x2(saat=6.0, alt_dk=20):
         oran = [mo.get("1"), mo.get("X"), mo.get("2")]
         if not all(oran) or any(o <= 1.0 for o in oran):
             continue
+        au = {}
+        for ent in (pe["markets"].get("totals_goals") or []):
+            try:
+                hat = float(ent.get("line"))
+            except (TypeError, ValueError):
+                continue
+            oc = ent.get("outcomes") or {}
+            if abs(hat - AU_HAT) < 0.01 and (ent.get("market_name") or "").startswith("Alt/Üst") \
+                    and " ve " not in (ent.get("market_name") or "").lower():
+                au = {k: v for k, v in (("Alt", oc.get("Alt")), ("Üst", oc.get("Üst"))) if v}
+                break
         out.append({"ts": e["d"], "esd_ms": int(e["d"] * 1000), "home": (pe["home"] or "").strip(),
-                    "away": (pe["away"] or "").strip(), "lig": pe.get("league") or "?", "oran": oran})
+                    "away": (pe["away"] or "").strip(), "lig": pe.get("league") or "?",
+                    "oran": oran, "au25": au})
     out.sort(key=lambda x: x["ts"])
     return out, "iddaa"
 
@@ -256,7 +302,7 @@ def _events(sport):
 
 def _odds(sport):
     return _cache("od_" + sport, ODDS_TTL, lambda: _get(
-        "/sports/%s/odds" % sport, regions="eu", markets="h2h",
+        "/sports/%s/odds" % sport, regions="eu", markets=",".join(PAZARLAR_API),
         oddsFormat="decimal", dateFormat="unix"))
 
 
@@ -272,6 +318,47 @@ def _esle(m, events):
         if (lo >= 0.72 or (dt <= 300 and hi >= 0.85 and lo >= 0.35)) and (best is None or lo + hi > best[0]):
             best = (lo + hi, ev)
     return best[1] if best else None
+
+
+def _konsensus_au(ev, hat=AU_HAT, now=None):
+    """Dunya Alt/Ust konsensusu (totals pazari, verilen hat). -> {"Alt"/"Üst": {p, disp, n, pin_p}}."""
+    now = now or time.time()
+    coll = {}
+    for bk in ev.get("bookmakers", []):
+        if now - bk.get("last_update", now) > MAX_AGE:
+            continue
+        w = SHARP_W.get(bk["key"], 1.0)
+        for mk in bk.get("markets", []):
+            if mk.get("key") != "totals":
+                continue
+            od = {}
+            for o in mk.get("outcomes", []):
+                if abs((o.get("point") if o.get("point") is not None else -99) - hat) > 0.01:
+                    continue
+                ad = str(o.get("name", "")).lower()
+                k = "Üst" if ad.startswith("over") else ("Alt" if ad.startswith("under") else None)
+                if k:
+                    od[k] = o["price"]
+            if set(od) == {"Alt", "Üst"}:
+                for k, pp in _devig(od).items():
+                    coll.setdefault(k, []).append((w, pp, bk["key"]))
+    return _ozetle(coll)
+
+
+def _ah_ham(ev, now=None):
+    """Asya handikabi (spreads) HAM kaydi - sinyal uretmez, CLV/olcum icin biriktirilir."""
+    now = now or time.time()
+    out = []
+    for bk in ev.get("bookmakers", []):
+        if now - bk.get("last_update", now) > MAX_AGE or bk["key"] not in SHARP_W:
+            continue
+        for mk in bk.get("markets", []):
+            if mk.get("key") != "spreads":
+                continue
+            for o in mk.get("outcomes", []):
+                out.append({"kitap": bk["key"], "taraf": o.get("name"),
+                            "hat": o.get("point"), "oran": o.get("price")})
+    return out
 
 
 def _konsensus(ev, now=None):
@@ -308,6 +395,22 @@ def _konsensus(ev, now=None):
     return out if len(out) == 3 else {}
 
 
+def _ozetle(coll, gereken=2):
+    """{secenek: [(agirlik, p, kitap)]} -> {secenek: {p, disp, n, pin_p}} (kalite kapilari ayni).
+    1X2 icin gereken=3, Alt/Ust icin 2; eksik secenek varsa pazar atlanir."""
+    out = {}
+    for k, arr in coll.items():
+        n, pin = len(arr), any(b == "pinnacle" for _, _, b in arr)
+        if not (n >= MIN_BOOKS or (pin and n >= MIN_BOOKS_PIN)):
+            continue
+        tw = sum(w for w, _, _ in arr)
+        mu = sum(w * pp for w, pp, _ in arr) / tw
+        sd = math.sqrt(sum(w * (pp - mu) ** 2 for w, pp, _ in arr) / tw)
+        out[k] = {"p": mu, "disp": sd, "n": n,
+                  "pin_p": next((pp for _, pp, b in arr if b == "pinnacle"), None)}
+    return out if len(out) == gereken else {}
+
+
 def dunya(maclar, max_lig=6, butce=3):
     bilgi = {"lig": [], "maliyet": 0, "atlanan": None}
     if not _anahtar():
@@ -339,7 +442,9 @@ def dunya(maclar, max_lig=6, butce=3):
             and time.time() - os.path.getmtime(os.path.join(CACHE_DIR, "od_%s.json" % s)) < ODDS_TTL]
     gun = datetime.now(TR).strftime("%Y%m%d")
     kota = _json_oku(KOTA, {})
-    kalan_gunluk = max(0, GUNLUK_TAVAN - kota.get(gun, 0))
+    # kredi = lig x pazar: gunluk tavan artik LIG degil KREDI cinsinden bolunur
+    kalan_lig = max(0, GUNLUK_TAVAN - kota.get(gun, 0)) // KREDI_LIG
+    kalan_gunluk = kalan_lig
     api_kalan = _api_kalan()
     if api_kalan is not None and api_kalan < RESERVE:
         kalan_gunluk = 0
@@ -347,7 +452,8 @@ def dunya(maclar, max_lig=6, butce=3):
     ucretli = [s for s in sirali if s not in taze][:max(0, min(butce, kalan_gunluk))]
     ligler = taze + ucretli
     bilgi["lig"] = ["%s(%d)%s" % (s, sayac[s], "" if s in ucretli else "*") for s in ligler]
-    bilgi["maliyet"] = len(ucretli)
+    bilgi["maliyet"] = len(ucretli) * KREDI_LIG
+    bilgi["pazarlar"] = list(PAZARLAR_API)
     if not ligler:
         bilgi["atlanan"] = (bilgi.get("atlanan") or "gunluk kredi tavani doldu")
         return {}, bilgi
@@ -361,16 +467,17 @@ def dunya(maclar, max_lig=6, butce=3):
         for e in veri:
             ham[e["id"]] = e
     if ucretli:
-        kota[gun] = kota.get(gun, 0) + len(ucretli)
+        kota[gun] = kota.get(gun, 0) + len(ucretli) * KREDI_LIG
         _json_yaz(KOTA, {k: v for k, v in kota.items() if k >= gun})
     bilgi["bugun"] = kota.get(gun, 0)
     cikti = {}
     for i, (sp, eid) in eslesme.items():
         e = ham.get(eid)
-        if e:
-            c = _konsensus(e)
-            if c:
-                cikti[i] = c
+        if not e:
+            continue
+        paket = {"1X2": _konsensus(e), "AU25": _konsensus_au(e), "AH": _ah_ham(e)}
+        if paket["1X2"] or paket["AU25"]:
+            cikti[i] = paket
     return cikti, bilgi
 
 
@@ -404,16 +511,21 @@ def _kalite(k):
     if tip == "GEC":
         return False, "fiyat kapandi (Nesine duzeltti)"
     esik = KADEME_ESIK.get(k.get("kademe") or "", HAREKET_ESIK)
+    ek = MARJ.esik_ek(k.get("lig"), k.get("pazar", "1X2"))   # pahali pazarda daha cok kayma istenir
+    esik += ek
     if k["dp_w"] < esik:
-        return False, "kayma %.1f < kademe esigi %.1f" % (k["dp_w"], esik)
+        return False, ("kayma %.1f < kademe esigi %.1f%s"
+                       % (k["dp_w"], esik, " (lig eki +%.1f)" % ek if ek else ""))
     if not k.get("pin") and k.get("n_kitap", 0) < MIN_KITAP:
         return False, "yetersiz onay (%d kitap, Pinnacle yok)" % k.get("n_kitap", 0)
     if k.get("sapma") is not None and k["sapma"] > MAX_SAPMA:
         return False, "kitaplar hemfikir degil (sapma %.3f)" % k["sapma"]
     if k["dp_w"] < k.get("dp_w_onceki", 0.0) - GERI_DONUS:
         return False, "hareket geri donuyor (%.1f -> %.1f)" % (k.get("dp_w_onceki", 0.0), k["dp_w"])
-    if (k.get("marj_n") or 0) > MARJ_TAVANI:
-        return False, "maç vergisi çok yüksek (%%%.1f)" % ((k.get("marj_n") or 0) * 100)
+    tav, n_tav, kaynak = MARJ.tavan(k.get("lig"), k.get("pazar", "1X2"), MARJ_TAVANI)
+    if (k.get("marj_n") or 0) > tav:
+        return False, ("maç vergisi çok yüksek (%%%.1f > tavan %%%.1f, %s n=%d)"
+                       % ((k.get("marj_n") or 0) * 100, tav * 100, kaynak, n_tav))
     if (k.get("ev") or -1) < AKIS_EV_TABAN:
         return False, "fiyat çok kötü (EV %+.1f%%)" % ((k.get("ev") or 0) * 100)
     return True, "OK"
@@ -454,7 +566,9 @@ def kaydet(max_lig=6, butce=3, saat=6.0, radar=False, sessiz=False):
         if len(pn) != 3:
             continue
         marj = sum(1.0 / o for o in m["oran"]) - 1.0
-        c = d.get(i)
+        MARJ.ogren(m["lig"], "1X2", marj)
+        paket = d.get(i) or {}
+        c = paket.get("1X2")
         for j, sec in enumerate(SEC):
             ak = "%s|%s|%s|%s" % (m["esd_ms"], _norm(m["home"]), _norm(m["away"]), sec)
             cc = c.get(sec) if c else None
@@ -472,6 +586,7 @@ def kaydet(max_lig=6, butce=3, saat=6.0, radar=False, sessiz=False):
                  "dp_w_onceki": (son_tur.get(ak) or {}).get("dp_w", 0.0),
                  "dp_w": round(dp_w, 2), "dp_n": round(dp_n, 2), "hucre": hucre,
                  "ev": round(ev, 4) if ev is not None else None, "hacim": "YOK", "kitap": kaynak,
+                 "pazar": "1X2",
                  "dk_kala": int((m["ts"] - simdi) / 60), "kademe": m.get("kademe")}
             satir.append(k)
             if p_w is None or p_w < MIN_P or m["oran"][j] < MIN_ORAN:
@@ -488,12 +603,80 @@ def kaydet(max_lig=6, butce=3, saat=6.0, radar=False, sessiz=False):
             k["kalite"] = sebep
             if gecti:
                 sinyal.append(k)
+
+        # ---- Alt/Ust 2.5 (dunyada en likit ikinci pazar; iddaa ile BIREBIR karsilastirilabilir)
+        cau, yau = paket.get("AU25"), (m.get("au25") or {})
+        marj_au = (sum(1.0 / o for o in yau.values()) - 1.0) if len(yau) == 2 else None
+        if marj_au is not None:
+            MARJ.ogren(m["lig"], "AU25", marj_au)    # taban cizgisi dunya verisi olmasa da birikir
+        if cau and len(yau) == 2:
+            pau = _devig(yau)
+            for sec_au in ("Alt", "Üst"):
+                cc = cau.get(sec_au)
+                oran_au = yau.get(sec_au)
+                if not cc or not oran_au or sec_au not in pau:
+                    continue
+                ak = "%s|%s|%s|AU25:%s" % (m["esd_ms"], _norm(m["home"]), _norm(m["away"]), sec_au)
+                p_w = cc["p"]
+                t = temel.get(ak)
+                dp_w = (p_w - t["p_w"]) * 100 if (t and t.get("p_w") is not None) else 0.0
+                dp_n = (pau[sec_au] - t["p_n"]) * 100 if (t and t.get("p_n") is not None) else 0.0
+                ev = p_w * oran_au - 1.0
+                k = {"ts": simdi, "anahtar": ak, "esd_ms": m["esd_ms"], "hn": m["home"],
+                     "an": m["away"], "lig": m["lig"], "sec": sec_au, "oran_n": oran_au,
+                     "p_n": round(pau[sec_au], 5), "p_w": round(p_w, 5), "n_kitap": cc["n"],
+                     "marj_n": round(marj_au, 4), "pin": bool(cc.get("pin_p")),
+                     "sapma": round(cc["disp"], 4), "hucre": _hucre(dp_w, dp_n),
+                     "dp_w_onceki": (son_tur.get(ak) or {}).get("dp_w", 0.0),
+                     "dp_w": round(dp_w, 2), "dp_n": round(dp_n, 2),
+                     "ev": round(ev, 4), "hacim": "YOK", "kitap": kaynak, "pazar": "AU25",
+                     "ah": paket.get("AH") or None,
+                     "dk_kala": int((m["ts"] - simdi) / 60), "kademe": m.get("kademe")}
+                satir.append(k)
+                if p_w < MIN_P or oran_au < MIN_ORAN:
+                    continue
+                if k["hucre"] == "A" and ev >= EV_ESIK:
+                    k["tip"] = "DEGER"
+                elif k["hucre"] == "A" and dp_w >= HAREKET_ESIK:
+                    k["tip"] = "AKIS"
+                elif k["hucre"] == "B" and dp_w >= HAREKET_ESIK:
+                    k["tip"] = "GEC"
+                else:
+                    continue
+                gecti, sebep = _kalite(k)
+                k["kalite"] = sebep
+                if gecti:
+                    sinyal.append(k)
     try:
         with open(yol, "a", encoding="utf-8") as f:
             for k in satir:
                 f.write(json.dumps(k, ensure_ascii=False) + "\n")
     except Exception:
         pass            # Render'da disk kalici degil; log yazilamazsa sinyal yine gider
+    MARJ.kaydet(zorla=True)
+    # TUM sinyal adaylari (tip almis satirlar) - OYNANMASA/GONDERILMESE bile loglanir.
+    # Olcum satirlari (tip'i olmayan) data/balina/*.jsonl'de kalir; buraya yazilmaz, aksi
+    # halde 5 dakikada bir ~240 satir birikir ve gunluk okunamaz hale gelir.
+    try:
+        import history_log as HL
+        gonderilen = {id(x) for x in sinyal}
+        HL.sinyal_coklu_yaz([{
+            "kaynak": "balina", "ts": x.get("ts"), "esd_ms": x.get("esd_ms"),
+            "ev": x.get("hn"), "dep": x.get("an"), "lig": x.get("lig"),
+            "pazar": PAZAR_AD.get(x.get("pazar", "1X2"), x.get("pazar")),
+            "secenek": x.get("sec"), "oran": x.get("oran_n"), "p_dunya": x.get("p_w"),
+            "ev_yuzde": round((x.get("ev") or 0) * 100, 2), "hucre": x.get("hucre"),
+            "tip": x.get("tip"), "kademe": x.get("kademe"), "marj": x.get("marj_n"),
+            "n_kitap": x.get("n_kitap"), "dp_w": x.get("dp_w"), "dp_n": x.get("dp_n"),
+            "karar": x.get("kalite"), "gonderildi": id(x) in gonderilen}
+            for x in satir if x.get("tip")])
+    except Exception:
+        pass
+    try:                 # CLV takibi: her sinyal iz dosyasina (kapanis + CLV otomatik gelir)
+        import clv
+        clv.balina_iz(sinyal)
+    except Exception:
+        pass
     if not sessiz:
         print("kayit: %d satir / %d mac | konsensus: %d | A-sinyal: %d" %
               (len(satir), len(maclar), len(d), len(sinyal)))
@@ -513,6 +696,17 @@ def _tier(ev):
             return simge, karar
     return "🔴", "OYNAMA - fiyat değeri yemiş"
 
+def _marj_referans(k):
+    """Mesajda gosterilecek marj referansi: lig medyani varsa onu, yoksa global tabani yazar."""
+    med, n = MARJ.taban(k.get("lig"), k.get("pazar", "1X2"))
+    if med is not None:
+        return "bu ligin medyanı %%%.1f, n=%d" % (med * 100, n)
+    pmed, pn = MARJ.pazar_tabani(k.get("pazar", "1X2"))
+    if pmed is not None:
+        return "pazar medyanı %%%.1f, n=%d" % (pmed * 100, pn)
+    return "referans henüz ölçülüyor"
+
+
 def _mesaj(k):
     """Para akisinin yorumu: nereye yuklendi, fiyat ne yapti, ne anlama geliyor, ne kadar sure var."""
     d = datetime.fromtimestamp(k["esd_ms"] / 1000, TR)
@@ -522,7 +716,10 @@ def _mesaj(k):
     tip = k.get("tip", "AKIS")
     onceki = k["p_w"] * 100 - k["dp_w"]
     adil = round(1.0 / k["p_w"], 2)
-    taraf = {"1": k["hn"], "2": k["an"], "X": "beraberlik"}.get(k["sec"], k["sec"])
+    pazar = k.get("pazar", "1X2")
+    pazar_ad = PAZAR_AD.get(pazar, "Maç Sonucu")
+    taraf = ({"1": k["hn"], "2": k["an"], "X": "beraberlik"} if pazar == "1X2"
+             else {"Alt": "az gol (2,5 Alt)", "Üst": "çok gol (2,5 Üst)"}).get(k["sec"], k["sec"])
     kitap = k.get("kitap") or "iddaa"
     simge, karar = _tier(k.get("ev"))
     alt = AKS.guvenli_alternatif(k["sec"])
@@ -530,9 +727,9 @@ def _mesaj(k):
          "⚽ %s - %s" % (k["hn"], k["an"]),
          "⏰ Maç Saati: %s TSİ (%s kaldı)" % (tarih, sure),
          "🏆 %s" % (k["lig"] or "?"),
-         "📊 Pazar: Maç Sonucu %s" % k["sec"],
+         "📊 Pazar: %s" % AKS.pazar_etiketi(pazar_ad, k["sec"]),
          "",
-         "🎯 Aksiyon / Önerilen Yön: %s %s @ %.2f" % (kitap, k["sec"], k["oran_n"]),
+         "🎯 Aksiyon / Önerilen Yön: %s %s @ %.2f" % (kitap, AKS.pazar_etiketi(pazar_ad, k["sec"]), k["oran_n"]),
          "(Akıllı para (Sharp Money) %s tarafına aktı.%s)"
          % (taraf, " Düşük risk alternatifi: %s." % alt if alt else ""),
          "",
@@ -553,12 +750,13 @@ def _mesaj(k):
               "kalıcı" if k["dp_w"] >= k.get("dp_w_onceki", 0.0) else "yavaşlıyor"),
           "",
           "FİYAT: %s %s @ %.2f | adil karşılığı %.2f | fark %%%+.1f"
-          % (kitap, k["sec"], k["oran_n"], adil, (k.get("ev") or 0) * 100),
+          % (kitap, AKS.pazar_etiketi(pazar_ad, k["sec"]), k["oran_n"], adil, (k.get("ev") or 0) * 100),
           "",
           "KARAR: %s" % karar,
-          "MAÇ VERGİSİ: %s bu maçta %%%.1f kesiyor (bülten medyanı %%17,6)%s"
-          % (kitap, (k.get("marj_n") or 0) * 100,
-             " - ucuz maç" if (k.get("marj_n") or 1) <= MARJ_UCUZ else ""),
+          "MAÇ VERGİSİ: %s bu maçta %%%.1f kesiyor (%s)%s"
+          % (kitap, (k.get("marj_n") or 0) * 100, _marj_referans(k),
+             " - ucuz maç" if MARJ.ucuz_mu(k.get("lig"), pazar, k.get("marj_n"))
+             or (k.get("marj_n") or 1) <= MARJ_UCUZ else ""),
           "Geçerlilik: maça 20 dakika kalana kadar; %s oranı %.2f altına düşerse iptal." % (kitap, adil),
           "",
           "⚠ Test aşaması (hacim verisi henüz yok, kayma fiyattan okunuyor): en fazla 0,25 birim."]
