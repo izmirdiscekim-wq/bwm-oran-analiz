@@ -1,0 +1,33 @@
+{
+  "devig_case": {
+    "odds": {"1": 2.00, "X": 3.40, "2": 3.80},
+    "yontem": "shin",
+    "expected_probs": {"1": 0.47884336529232535, "X": 0.2758318836557819, "2": 0.2453247510518927},
+    "tolerance": 1e-9
+  },
+  "elo_case": {
+    "elo_a": 1500.0,
+    "elo_b": 1500.0,
+    "skor_h": 3,
+    "skor_a": 1,
+    "k": 20.0,
+    "expected_beklenen_h": 0.5,
+    "expected_elo_a": 1510.0,
+    "expected_elo_b": 1490.0,
+    "tolerance": 1e-9
+  },
+  "pipe_case": {
+    "record": {
+      "spor": "hokey",
+      "mac": "A - B",
+      "ts": 1234567890,
+      "pick": "Maç Sonucu (Uzt.Dahil): A",
+      "oran": 1.9,
+      "ev": 0.03,
+      "kasa": 0.5,
+      "bayrak": "SINYAL",
+      "f": {}
+    },
+    "expected_pipe": "[HOK]|A-B|FLG:SGN|MKT:MS:1@1.90|EV:+3.0%|KLY:0.5%"
+  }
+}
