@@ -17,11 +17,66 @@ import sys
 import json
 import glob
 import math
+import time
 from datetime import datetime
 
-import pandas as pd
+try:                       # pandas YALNIZ settle/evaluate (toplu analiz) icin; Render'da yok
+    import pandas as pd
+    PANDAS = True
+except ImportError:        # pragma: no cover
+    pd, PANDAS = None, False
 
 MIN_BUCKET_N = 300
+
+
+# ---------------------------------------------------------------- SINYAL GUNLUGU (saf Python)
+# Denetim bulgusu: balina ve oran taktiklerinden cikan sinyaller hicbir yere yazilmiyordu
+# (PROMPT.md bolum 12 "her sinyal - oynanmasa bile - loglanir" sarti uygulanmamisti).
+# Asagidaki uc fonksiyon pandas GEREKTIRMEZ; append-only JSONL yazar, Render'da da calisir.
+_SINYAL_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "history")
+
+
+def _sinyal_yol(ad="sinyal_log.jsonl"):
+    return os.path.join(_SINYAL_DIR, ad)
+
+
+def sinyal_yaz(kayit, dosya="sinyal_log.jsonl"):
+    """Tek sinyali JSONL'e ekler (oynanmasa bile). -> True yazildi / False yazilamadi.
+
+    Beklenen alanlar (eksikler None kalir): kaynak(balina|taktik|kirilma), ts, esd_ms, ev, dep,
+    lig, pazar, secenek, oran, p_dunya, ev_yuzde, hucre, tip, kademe, marj, karar, gonderildi."""
+    kayit = dict(kayit)
+    kayit.setdefault("ts", time.time())
+    kayit.setdefault("gun", datetime.fromtimestamp(kayit["ts"]).strftime("%Y%m%d"))
+    try:
+        os.makedirs(_SINYAL_DIR, exist_ok=True)
+        with open(_sinyal_yol(dosya), "a", encoding="utf-8") as f:
+            f.write(json.dumps(kayit, ensure_ascii=False) + "\n")
+        return True
+    except OSError:
+        return False           # efemeral/salt-okunur disk: sinyal yine gonderilir
+
+
+def sinyal_coklu_yaz(kayitlar, dosya="sinyal_log.jsonl"):
+    """-> yazilan satir sayisi."""
+    return sum(1 for k in (kayitlar or []) if sinyal_yaz(k, dosya))
+
+
+def sinyal_oku(gun=None, kaynak=None, dosya="sinyal_log.jsonl"):
+    """-> [kayit] (gun: 'YYYYMMDD', kaynak: 'balina'/'taktik'/...)."""
+    out = []
+    try:
+        with open(_sinyal_yol(dosya), encoding="utf-8") as f:
+            for satir in f:
+                try:
+                    k = json.loads(satir)
+                except ValueError:
+                    continue
+                if (gun is None or k.get("gun") == gun) and (kaynak is None or k.get("kaynak") == kaynak):
+                    out.append(k)
+    except OSError:
+        pass
+    return out
 
 
 def _log_path(data_dir):

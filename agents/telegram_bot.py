@@ -233,6 +233,14 @@ def otomatik_tara(token, allowed_user_ids):
         save_analyzed(analyzed)
         bildirim += len(grup)
     print(f"[TARAMA] {bildirim} mac bildirildi. ({len(adaylar)} aday mac, 60 dk penceresinde)", flush=True)
+    try:                                  # CLV: uretilen her taktik sinyali iz'e yazilir (oynanmasa bile)
+        import clv
+        if maclar:
+            n_iz = clv.taktik_iz(maclar)
+            if n_iz:
+                print(f"[CLV] {n_iz} taktik sinyali iz kaydina yazildi", flush=True)
+    except Exception as exc:
+        print(f"[CLV] iz kaydi atlandi: {exc}", flush=True)
     try:                                  # balina katmani: radar kademesi yoksa API cagrisi yapilmaz
         import balina
         for metin in balina.yeni_sinyaller():
@@ -240,6 +248,11 @@ def otomatik_tara(token, allowed_user_ids):
                 send_message(token, user_id, metin)
     except Exception as exc:
         print(f"[BALINA] atlandi: {exc}", flush=True)
+    try:                                  # T-5dk kapanis yakalama + kickoff sonrasi CLV hesabi
+        import clv                        # ayni turda cekilmis bulteni kullanir -> ek ag cagrisi yok
+        clv.tur(veri if taze else None)
+    except Exception as exc:
+        print(f"[CLV] tur atlandi: {exc}", flush=True)
 
 
 def load_tracker():

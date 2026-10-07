@@ -557,11 +557,32 @@ def _kapanis_mi(esd, referans_ts):
     return 0 <= dk <= KAPANIS_ESIK_DK
 
 
+def oyna_oran(ev, o):
+    """Oyna kodunun SAYISAL orani (yoksa None). _oyna_deger'in metin degil deger donen ikizi;
+    CLV hesabi icin gerekli (clv.py)."""
+    kod = o
+    if o.lower() in FAV_KODLAR:
+        fav = _favori(ev["mk"])
+        if fav is None:
+            return None, None
+        kod = FAV_KODLAR[o.lower()][0 if fav == "ev" else 1]
+    try:
+        return kod, _deger(ev["mk"], *_kod_coz(kod))
+    except Exception:
+        return kod, None
+
+
 def _iz_ekle(iz_satirlari, t, e, s, ks):
+    oyna = []
+    for o in (t.get("oyna") or []):
+        kod, deger = oyna_oran(e, o)
+        if kod:
+            oyna.append({"kod": kod, "oran": deger})
     iz_satirlari.append({
         "taktik": t["ad"], "spor": t.get("spor", "futbol"), "ev": e["hn"], "dep": e["an"], "lig": e["lig"],
         "esd": e["esd"], "esd_ms": e["esd_ms"], "tarandi": time.time(),
         "kurallar": [{"kod": k.ad(), "deger": v} for k, (v, _) in zip(ks, s)],
+        "oyna": oyna,                 # CLV: sinyal anindaki oynanacak secenek + orani
     })
 
 
