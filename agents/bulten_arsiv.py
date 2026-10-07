@@ -346,7 +346,8 @@ def cmd_durum(_a):
         print("arşiv boş")
         return
     print("Tür     Gün        Maç  İY/MS   Not")
-    for f in sorted(os.listdir(ARSIV), key=lambda x: (x.split("_")[1], x)):
+    dosyalar = [f for f in os.listdir(ARSIV) if "_" in f and f.endswith(".json")]
+    for f in sorted(dosyalar, key=lambda x: (x.split("_")[1], x)):
         kind, ymd = f[:-5].split("_")
         d = _load(os.path.join(ARSIV, f))
         ms = d["maclar"]

@@ -13,9 +13,9 @@ import os, sys, shutil, hashlib, argparse
 KOK = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))          # Oran analiz/.claude
 HEDEFLER = {"global": os.path.join(os.path.expanduser("~"), ".claude"),
             "proje": os.path.join(os.path.expanduser("~"), "OneDrive", "Desktop", "BWM_Dosyalari")}
-DOSYALAR = ["skills/bwm-nesine-bulten/SKILL.md", "skills/bwm-basketbol-bulten/SKILL.md", "skills/bwm-taktik-tara/SKILL.md", "skills/bwm-bulten-arsiv/SKILL.md",
+DOSYALAR = ["skills/bwm-nesine-bulten/SKILL.md", "skills/bwm-basketbol-bulten/SKILL.md", "skills/bwm-taktik-tara/SKILL.md", "skills/bwm-capraz-oran/SKILL.md", "skills/bwm-bulten-arsiv/SKILL.md",
             "skills/bwm-mac-bul/SKILL.md", "skills/bwm-veri-topla/SKILL.md",
-            "agents/nesine-bulteni.md", "agents/basketbol-bulteni.md", "agents/taktik-tarayici.md", "agents/bulten-arsivci.md", "agents/mac-bulucu.md", "agents/veri-toplayici.md"]
+            "agents/basketbol-analist.md", "agents/hokey-analist.md", "agents/tenis-analist.md", "agents/nesine-bulteni.md", "agents/basketbol-bulteni.md", "agents/taktik-tarayici.md", "agents/bulten-arsivci.md", "agents/mac-bulucu.md", "agents/veri-toplayici.md"]
 
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")

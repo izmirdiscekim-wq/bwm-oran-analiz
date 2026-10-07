@@ -11,6 +11,9 @@ KATMAN A - ARSIV / NESINE / TAKTIK  (kod: Oran analiz/.claude/agents; kural dosy
   taktik [--yakin] [--ad "4,5"] | --liste | --kurallar | --kodlar | --arsiv | --ekle/--degistir/--kapat/--ac/--sil "Ad" --kural "u45 4,20-5,10" ...
                               kullanicinin oran-araligi taktikleri (kategori "Oran Analizi"): kaydet + Nesine bultenindeki maclarda tara; varsayilan spor futbol,
                               "spor: basketbol" etiketli taktikler basketbol.py bultenini tarar (bkz. taktik.py SPOR_MODUL)
+  capraz --kir <pazar> [--faz ac|kap] [--bant 1,55-1,95] | --izgara <pazar> | --kural ".." | --firmalar <pazar>
+                              CAPRAZ-FIRMA backtest: ayni mac icin 20 firmanin acilis/kapanis orani + gercek sonuc
+                              (12.705 Premier Lig maci 1993-94..2025-26; Iddaa/Nesine YOK, bkz. capraz.py)
   arsiv <kapsam|mackolik|goster|sonuc|topla|disari|sablon|dogruskor|ust45|pdf-liste|pdf-aktar|...>   gecmis bulten/oran/sonuc arsivi (bulten_arsiv.py)
   senkron [--yaz]             skill/ajan belgelerini global + proje kopyalarina yansit
 KATMAN 2 - VERI TOPLAMA     (collect_data.py; tek konu, birkac satir)
@@ -23,6 +26,10 @@ KATMAN 3 - ANALIZ           (match_report.py; model + kurallar + sablon)
   tara [N] [--api] [--dc]     tum bulten hizli tarama
 KATMAN 7 - DERIN MAC ARASTIRMASI (derin.py; belirli mac/maclar sorulunca: fazla veri + iki model + piyasa mutabakati + oran hareketi + tum pazarlar)
   derin "Takim1,Takim2" [--tarih YYYY-MM-DD]     gun verilmezse bugunden itibaren ilk baslamamis mac
+KATMAN 6b - COKLU SPOR SINYAL MOTORU (multi_sport_analyzer.py; saf Python; basketbol+buz hokeyi+tenis; LLM'e yalniz bayrakli mac)
+  multi tara [--spor basketbol|hokey|tenis|hepsi] [--saat 12] [--n 30] [--json] [--tum]   --json = LLM ajanlarina giden kompakt cikti
+  multi kaleci "<takim>" onayli|yedek|belirsiz [kurtarma_orani]   hokey: kaleci onayi girilmezse kaleci katsayisi UYGULANMAZ
+  multi durum                 veri kaynaklari sagligi (iddaa, NHL API, kaleci/tenis servis dosyalari)
 KATMAN 6 - GUN TARAMASI, TUM SPORLAR (multi_sport.py; futbol+basketbol+buz hokeyi+tenis+hentbol, en mantikliyi basa, ilk N)
   gun [YYYY-MM-DD] [--n 50] [--futbol-n 150] [--spor futbol,basketbol] [--goster]
 KATMAN 5 - CANLI BAHIS      (live.py; oyun-durumu modeli + de-vig'li canli piyasa; kayit: data/live_log.jsonl)
@@ -40,6 +47,7 @@ KATMAN 4 - RAPOR / KARAR    (kayitli rapordan, agsiz)
   kupon [--gun D] [--canli] [--n 5] [--oran 4-6]   4-6 toplam oranli kuponlar (baslamamis maclar ya da canli); portfoy olasiliklari
   yardim
 """
+import os
 import sys
 
 sys.stdout.reconfigure(encoding="utf-8")
@@ -50,6 +58,7 @@ HELP = """Hangi isteği hangi komut karşılar (katman: komut):
 | "20:30-00:00 arası maçları bul" | 1 Bulma | bwm.py bul --saat 20:30-00:00 |
 | "Barcelona ve Ajax maçları hangileri?" | 1 Bulma | bwm.py bul --takim "Barcelona,Ajax" |
 | "Nesine'nin açtığı oranlar / oynanmayan maçlar / bülten" (Nesine oranı) | A2 Nesine | bwm.py nesine [--gun yarin] [--takim A] [--acik iyms] [--tam] |
+| "Basketbol / buz hokeyi / tenis sinyali" (B2B, tempo, kaleci, zemin; yalniz bayrakli maclar) | 6b Coklu spor | bwm.py multi tara [--spor hokey] [--json] |
 | "Taktik kurallarına uyan oynanmamış maçları bul" (Oran Analizi taktikleri) | A3 Taktik | bwm.py taktik [--yakin] [--ad "4,5"] [--arsiv] |
 | "Yeni taktik yazdım: kaydet / kuralı değiştir / kapat" | A3 Taktik | bwm.py taktik --ekle "Ad" --hedef ".." --oyna u45 --basari "top>=5" --kural "u45 4,20-5,10" [--kural ..] ; --degistir/--kapat/--ac/--sil "Ad"; --liste |
 | "Geçmiş bülten / eski maçların oranı ve sonucu" | A Arşiv | bwm.py arsiv kapsam / mackolik YYYY-MM-DD / goster ... / sonuc / topla |
@@ -74,7 +83,34 @@ HELP = """Hangi isteği hangi komut karşılar (katman: komut):
 | "Neden çoğu maç SKIP?" | 4 Rapor | bwm.py neden |"""
 
 
+# Bu klasorde OLMAYAN modullerin (oddsapi, derin, live, kupon, settle, backtest_model)
+# bulundugu global ajan klasoru. Env ile gecersiz kilinabilir: BWM_GLOBAL_AGENTS
+GLOBAL_AGENTS = os.environ.get("BWM_GLOBAL_AGENTS") or os.path.join(
+    os.path.expanduser("~"), ".claude", "agents")
+DIS_MODULLER = {"oddsapi": "referans", "derin": "derin", "live": "canli", "kupon": "kupon",
+                "settle": "sonuc", "backtest_model": "kalibre"}
+
+
+def _yollari_hazirla():
+    """Kendi klasorunu ve (varsa) global ajan klasorunu import yoluna ekler.
+
+    Neden: bu dosya 'referans/derin/canli/kupon/sonuc/kalibre' komutlarini bu klasorde
+    BULUNMAYAN modullere yonlendiriyordu -> ModuleNotFoundError: No module named 'oddsapi'.
+    Moduller global klasorde duruyor; yol eklenince ayni komutlar buradan da calisir."""
+    burada = os.path.dirname(os.path.abspath(__file__))
+    for yol in (burada, GLOBAL_AGENTS):
+        if os.path.isdir(yol) and yol not in sys.path:
+            sys.path.append(yol)
+
+
+def _eksik_modul_mesaji(modul, komut):
+    return ("'%s' komutu '%s' modulunu gerektiriyor; ne bu klasorde ne de global ajan "
+            "klasorunde (%s) bulundu.%s" % (komut, modul, GLOBAL_AGENTS,
+            "" if os.path.isdir(GLOBAL_AGENTS) else " Klasor yok - BWM_GLOBAL_AGENTS ile dogru yolu verin."))
+
+
 def main():
+    _yollari_hazirla()
     a = sys.argv[1:]
     cmd, rest = (a[0] if a else "yardim"), a[1:]
     if cmd == "bul":
@@ -83,12 +119,18 @@ def main():
     elif cmd in ("taktik", "kural"):
         import taktik
         taktik.main(rest)
+    elif cmd in ("capraz", "caprazoran"):
+        import capraz
+        capraz.main(rest)
     elif cmd in ("nesine", "bulten"):
         import nesine
         nesine.main(rest)
     elif cmd in ("basketbol", "basket"):
         import basketbol
         basketbol.main(rest)
+    elif cmd in ("multi", "coklu"):
+        import multi_sport_analyzer
+        multi_sport_analyzer.main(rest)
     elif cmd == "arsiv":
         import bulten_arsiv
         sys.argv = ["bulten_arsiv.py"] + rest
@@ -100,25 +142,43 @@ def main():
         import collect_data
         getattr(collect_data, cmd)(rest)
     elif cmd == "derin":
-        import derin
+        try:
+            import derin
+        except ImportError:
+            print(_eksik_modul_mesaji("derin", "derin")); return
         derin.main(rest)
     elif cmd == "gun":
         import multi_sport
         multi_sport.main(rest)
     elif cmd == "canli":
-        import live
+        try:
+            import live
+        except ImportError:
+            print(_eksik_modul_mesaji("live", "canli")); return
         live.main(rest)
     elif cmd == "kupon":
-        import kupon
+        try:
+            import kupon
+        except ImportError:
+            print(_eksik_modul_mesaji("kupon", "kupon")); return
         kupon.main(rest)
     elif cmd == "sonuc":
-        import settle
+        try:
+            import settle
+        except ImportError:
+            print(_eksik_modul_mesaji("settle", "sonuc")); return
         settle.main(rest)
     elif cmd == "referans":
-        import oddsapi
+        try:
+            import oddsapi
+        except ImportError:
+            print(_eksik_modul_mesaji("oddsapi", "referans")); return
         oddsapi.main(rest)
     elif cmd == "kalibre":
-        import backtest_model
+        try:
+            import backtest_model
+        except ImportError:
+            print(_eksik_modul_mesaji("backtest_model", "kalibre")); return
         backtest_model.main(rest)
     elif cmd == "tara":
         import run_daily
