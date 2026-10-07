@@ -123,6 +123,11 @@ def _arsive_yaz(veri):
         meta = {"home": ev["hn"], "away": ev["an"], "league": ev["lig"], "id": f"{ev['esd_ms']}_{ev['hn']}_{ev['an']}"}
         stat[ba._merge(store, meta["id"], meta, ev["esd"], veri["cekim"], mk)] += 1
     ba._write_groups("nesine", groups)
+    try:                      # kompakt + commit edilebilir acilis taban cizgisi (Render'da disk efemeral)
+        import acilis
+        stat["acilis"] = acilis.kaydet(veri)
+    except Exception as ex:   # arsiv yazimi asla acilis yuzunden kesilmez
+        stat["acilis"] = {"hata": str(ex)[:80]}
     return stat
 
 
