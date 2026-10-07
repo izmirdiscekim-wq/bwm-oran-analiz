@@ -34,6 +34,7 @@ import requests
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, SCRIPT_DIR)
+import aksiyon as AKS
 import nesine as N
 
 try:
@@ -524,9 +525,16 @@ def _mesaj(k):
     taraf = {"1": k["hn"], "2": k["an"], "X": "beraberlik"}.get(k["sec"], k["sec"])
     kitap = k.get("kitap") or "iddaa"
     simge, karar = _tier(k.get("ev"))
+    alt = AKS.guvenli_alternatif(k["sec"])
     s = ["%s PARA AKIŞI - %s" % (simge, karar.split(" (")[0].split(" - ")[0]),
-         "%s - %s" % (k["hn"], k["an"]),
-         "%s · %s · maça %s" % (k["lig"] or "?", tarih, sure),
+         "⚽ %s - %s" % (k["hn"], k["an"]),
+         "⏰ Maç Saati: %s TSİ (%s kaldı)" % (tarih, sure),
+         "🏆 %s" % (k["lig"] or "?"),
+         "📊 Pazar: Maç Sonucu %s" % k["sec"],
+         "",
+         "🎯 Aksiyon / Önerilen Yön: %s %s @ %.2f" % (kitap, k["sec"], k["oran_n"]),
+         "(Akıllı para (Sharp Money) %s tarafına aktı.%s)"
+         % (taraf, " Düşük risk alternatifi: %s." % alt if alt else ""),
          "",
          "PARA NEREYE AKTI: %s" % taraf.upper(),
          "Dünya piyasasında %s'in gerçek şansı %%%.1f -> %%%.1f çıktı (+%.1f puan, %d bahis şirketi, Pinnacle ağırlıklı)."
