@@ -1,2 +1,8 @@
+# Render free plan: HAFIF mimari. numpy/pandas/scipy BILINCLI olarak eklenmedi -
+# derleme suresi + 512 MB bellek sinirini zorluyorlar. Nicel cekirdek bu paketler
+# olmadan calisacak sekilde yazildi: devig.py (Shin, saf Python), pynum.py (Poisson/
+# izgara/Nelder-Mead), dixon_coles_model.predict (saf Python + data/model_snapshot.json).
+# Model EGITIMI yereldedir (orada numpy/pandas kurulu); bulut yalniz snapshot OKUR.
 requests>=2.31,<3
 python-dotenv>=1,<2
+beautifulsoup4>=4.12,<5

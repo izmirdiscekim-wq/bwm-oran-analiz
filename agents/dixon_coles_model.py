@@ -21,12 +21,25 @@ import json
 import math
 import difflib
 import unicodedata
-import numpy as np
-import pandas as pd
 import requests
 from datetime import datetime
-from scipy.optimize import minimize
-from scipy.special import gammaln
+
+import pynum                       # saf-Python Poisson/izgara (predict icin yeterli)
+from devig import shin_probs       # saf-Python Shin arindirma (asil tanim artik devig.py'de)
+
+# numpy/pandas/scipy YALNIZCA model EGITIMI (fit_dixon_coles / load_league_history) icin
+# gerekli. Render free plan'da bu paketler kurulu DEGIL; modulun import edilmesi, snapshot
+# okunmasi ve predict() calismasi artik onlara bagli degil (bkz. AGIR_HATA / predict).
+try:
+    import numpy as np
+    import pandas as pd
+    from scipy.optimize import minimize
+    from scipy.special import gammaln
+    AGIR = True
+    AGIR_HATA = None
+except ImportError as _ex:          # pragma: no cover - buluta ozgu yol
+    np = pd = minimize = gammaln = None
+    AGIR, AGIR_HATA = False, str(_ex)
 
 from enrich_stats import _find_totals_entry, _find_goal_band_entry, devig
 
@@ -55,27 +68,8 @@ LEAGUE_CODES = {
 
 
 # ---------- Shin de-vig ----------
-def shin_probs(odds_by_outcome):
-    """Shin (1993) yontemi: favori-sansli yanliligini duzelten vig arindirma."""
-    items = {k: v for k, v in odds_by_outcome.items() if v and v > 1.0}
-    if len(items) < 2:
-        return {}
-    pi = {k: 1.0 / v for k, v in items.items()}
-    s = sum(pi.values())
-
-    def probs(z):
-        return {k: (math.sqrt(z * z + 4 * (1 - z) * (p * p) / s) - z) / (2 * (1 - z)) for k, p in pi.items()}
-
-    lo, hi = 0.0, 0.4
-    for _ in range(60):
-        mid = (lo + hi) / 2
-        if sum(probs(mid).values()) > 1:
-            lo = mid
-        else:
-            hi = mid
-    p = probs((lo + hi) / 2)
-    tot = sum(p.values())
-    return {k: v / tot for k, v in p.items()}
+# shin_probs: tanim devig.py'ye tasindi (saf Python, numpy'siz). Bu ad geriye uyumluluk
+# icin yukarida import edildi - "from dixon_coles_model import shin_probs" cagiranlar bozulmaz.
 
 
 # ---------- Dixon-Coles ----------
@@ -89,6 +83,10 @@ def _tau(x, y, lam, mu, rho):
 
 
 def fit_dixon_coles(df, ref_date):
+    if not AGIR:
+        raise RuntimeError("fit_dixon_coles numpy/pandas/scipy gerektirir (%s). Modeli YERELDE "
+                           "egitip snapshot_yaz() ile data/model_snapshot.json'a yazin; bulut "
+                           "tarafi snapshot_oku()+predict() ile agir paket olmadan calisir." % AGIR_HATA)
     """df: Date, HomeTeam, AwayTeam, FTHG, FTAG. Doner: model dict veya None."""
     teams = sorted(set(df["HomeTeam"]) | set(df["AwayTeam"]))
     counts = pd.concat([df["HomeTeam"], df["AwayTeam"]]).value_counts()
@@ -124,26 +122,60 @@ def fit_dixon_coles(df, ref_date):
 
 
 def predict(model, home, away):
+    """SAF PYTHON (numpy gerekmez): snapshot'tan okunan modelle de calisir."""
     i, j = model["idx"][home], model["idx"][away]
     lam = math.exp(model["att"][i] + model["def"][j] + model["home"])
     mu = math.exp(model["att"][j] + model["def"][i])
-    g = np.arange(0, MAX_GOALS + 1)
-    ph = np.exp(g * math.log(lam) - lam - gammaln(g + 1))
-    pa = np.exp(g * math.log(mu) - mu - gammaln(g + 1))
-    grid = np.outer(ph, pa)
+    n = MAX_GOALS + 1
+    grid = pynum.outer(pynum.pois(lam, n), pynum.pois(mu, n))
     rho = model["rho"]
-    grid[0, 0] *= max(1 - lam * mu * rho, 1e-6)
-    grid[0, 1] *= max(1 + lam * rho, 1e-6)
-    grid[1, 0] *= max(1 + mu * rho, 1e-6)
-    grid[1, 1] *= max(1 - rho, 1e-6)
-    grid /= grid.sum()
-    tot = np.add.outer(g, g)
+    grid[0][0] *= max(1 - lam * mu * rho, 1e-6)       # Dixon-Coles dusuk-skor duzeltmesi
+    grid[0][1] *= max(1 + lam * rho, 1e-6)
+    grid[1][0] *= max(1 + mu * rho, 1e-6)
+    grid[1][1] *= max(1 - rho, 1e-6)
+    grid = pynum.normalize(grid)
+    tg = pynum.toplam_gol(grid)
     return {
-        "p1": float(np.tril(grid, -1).sum()), "pX": float(np.trace(grid)), "p2": float(np.triu(grid, 1).sum()),
-        "p_over25": float(grid[tot >= 3].sum()),
-        "p_goals_2_3": float(grid[(tot == 2) | (tot == 3)].sum()),
+        "p1": pynum.tril_sum(grid, -1), "pX": pynum.trace(grid), "p2": pynum.triu_sum(grid, 1),
+        "p_over25": sum(v for t, v in tg.items() if t >= 3),
+        "p_goals_2_3": sum(v for t, v in tg.items() if t in (2, 3)),
         "exp_home": round(lam, 2), "exp_away": round(mu, 2), "exp_total": round(lam + mu, 2),
     }
+
+
+SNAPSHOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "model_snapshot.json")
+
+
+def snapshot_yaz(modeller, yol=None):
+    """Yerelde egitilen modelleri JSON'a yazar (depoya commit edilip Render'da OKUNUR).
+
+    Neden: fit_dixon_coles numpy+pandas+scipy istiyor, Render free plan'da bunlar yok.
+    Egitim yerelde yapilir, cikti (att/def/home/rho + takim indeksi) buraya yazilir;
+    bulut tarafi yalnizca snapshot_oku + predict calistirir - agir paket gerekmez.
+    -> yazilan lig sayisi."""
+    yol = yol or SNAPSHOT
+    paket = {"uretildi": datetime.now().isoformat(timespec="seconds"), "ligler": {}}
+    for kod, m in (modeller or {}).items():
+        if not m:
+            continue
+        paket["ligler"][kod] = {"idx": {str(k): int(v) for k, v in m["idx"].items()},
+                                "att": [float(x) for x in m["att"]],
+                                "def": [float(x) for x in m["def"]],
+                                "home": float(m["home"]), "rho": float(m["rho"]),
+                                "n_mac": int(m.get("n_mac") or 0)}
+    os.makedirs(os.path.dirname(yol), exist_ok=True)
+    with open(yol, "w", encoding="utf-8") as f:
+        json.dump(paket, f, ensure_ascii=False, separators=(",", ":"))
+    return len(paket["ligler"])
+
+
+def snapshot_oku(yol=None):
+    """-> {lig_kodu: model} (dosya yoksa {}). numpy gerekmez; predict() dogrudan kullanir."""
+    try:
+        with open(yol or SNAPSHOT, encoding="utf-8") as f:
+            return json.load(f).get("ligler") or {}
+    except (OSError, ValueError):
+        return {}
 
 
 # ---------- Takim adi eslestirme ----------

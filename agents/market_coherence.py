@@ -15,12 +15,10 @@ import re
 import glob
 import json
 import math
-import numpy as np
 from datetime import datetime
-from scipy.optimize import minimize
-from scipy.special import gammaln
 
-from dixon_coles_model import shin_probs
+import pynum                      # numpy/scipy yerine saf-Python mikro sayisal katman
+from devig import shin_probs      # saf-Python vig arindirma (eskiden dixon_coles_model'den)
 
 GRID = 13
 MIN_EDGE_PROB = 0.10      # cok dusuk olasilikli sonuclarda model hatasi EV'yi sisirir
@@ -29,12 +27,21 @@ WATCH_EV = 0.04
 
 
 def _pois(lam):
-    g = np.arange(GRID)
-    return np.exp(g * math.log(lam) - lam - gammaln(g + 1))
+    return pynum.pois(lam, GRID)
 
 
 def _grid(lam, mu):
-    return np.outer(_pois(lam), _pois(mu))
+    return pynum.outer(_pois(lam), _pois(mu))
+
+
+def _tg(g):
+    """{toplam_gol: olasilik} - Alt/Ust ve gol-bandi pazarlarinin ortak tabani."""
+    return pynum.toplam_gol(g)
+
+
+def _kg_var(g):
+    """Karsilikli gol VAR = iki takim da >= 1 gol (izgaranin [1:, 1:] blogu)."""
+    return sum(v for i, r in enumerate(g) if i >= 1 for j, v in enumerate(r) if j >= 1)
 
 
 def _parse_band(label):
@@ -49,13 +56,13 @@ def _parse_band(label):
 def collect_markets(match):
     """Doner: list of dict(kind, name, odds{label: odd}, fn(grid)->{label: prob})"""
     m = match.get("markets", {})
-    tot = np.add.outer(np.arange(GRID), np.arange(GRID))
     out = []
 
     ms = m.get("match_outcome", {}) or {}
     if all(k in ms for k in ("1", "X", "2")):
         out.append({"name": "1X2", "odds": {"1": ms["1"], "X": ms["X"], "2": ms["2"]},
-                    "fn": lambda g: {"1": float(np.tril(g, -1).sum()), "X": float(np.trace(g)), "2": float(np.triu(g, 1).sum())}})
+                    "fn": lambda g: {"1": pynum.tril_sum(g, -1), "X": pynum.trace(g),
+                                     "2": pynum.triu_sum(g, 1)}})
 
     for e in m.get("totals_goals", []) or []:
         name = e.get("market_name", "")
@@ -68,7 +75,9 @@ def collect_markets(match):
             if line not in (1.5, 2.5, 3.5):
                 continue
             out.append({"name": f"A/Ü {line}", "odds": {"Alt": oc["Alt"], "Üst": oc["Üst"]},
-                        "fn": (lambda ln: lambda g: {"Üst": float(g[tot > ln].sum()), "Alt": float(g[tot < ln].sum())})(line)})
+                        "fn": (lambda ln: lambda g: {
+                            "Üst": sum(v for t, v in _tg(g).items() if t > ln),
+                            "Alt": sum(v for t, v in _tg(g).items() if t < ln)})(line)})
         elif name == "Toplam Gol":
             bands = {}
             for label, odd in oc.items():
@@ -77,12 +86,14 @@ def collect_markets(match):
                     bands[label] = (rng, odd)
             if len(bands) >= 3:
                 out.append({"name": "Toplam Gol", "odds": {k: v[1] for k, v in bands.items()},
-                            "fn": (lambda bd: lambda g: {k: float(g[(tot >= r[0]) & (tot <= r[1])].sum()) for k, (r, _) in bd.items()})(bands)})
+                            "fn": (lambda bd: lambda g: {
+                                k: sum(v for t, v in _tg(g).items() if r[0] <= t <= r[1])
+                                for k, (r, _) in bd.items()})(bands)})
 
     btts = m.get("both_teams_score", {}) or {}
     if "Var" in btts and "Yok" in btts:
         out.append({"name": "KG", "odds": {"Var": btts["Var"], "Yok": btts["Yok"]},
-                    "fn": lambda g: {"Var": float(g[1:, 1:].sum()), "Yok": float(1 - g[1:, 1:].sum())}})
+                    "fn": lambda g: {"Var": _kg_var(g), "Yok": 1.0 - _kg_var(g)}})
     return out
 
 
@@ -108,8 +119,7 @@ def analyze_match(match):
 
     def loss(x):
         lam, mu = math.exp(x[0]), math.exp(x[1])
-        g = _grid(lam, mu)
-        g = g / g.sum()
+        g = pynum.normalize(_grid(lam, mu))
         se, n = 0.0, 0
         for mk in targets:
             mp = mk["fn"](g)
@@ -120,11 +130,10 @@ def analyze_match(match):
 
     st = match.get("stats", {})
     x0 = [math.log(max(st.get("home_avg_goals_scored", 1.3), 0.2)), math.log(max(st.get("away_avg_goals_scored", 1.0), 0.2))]
-    res = minimize(loss, x0, method="Nelder-Mead", options={"xatol": 1e-3, "fatol": 1e-8, "maxiter": 200})
-    lam, mu = math.exp(res.x[0]), math.exp(res.x[1])
-    rmse = math.sqrt(res.fun)
-    g = _grid(lam, mu)
-    g = g / g.sum()
+    res = pynum.nelder_mead(loss, x0, xatol=1e-3, fatol=1e-8, maxiter=200)
+    lam, mu = math.exp(res["x"][0]), math.exp(res["x"][1])
+    rmse = math.sqrt(res["fun"])
+    g = pynum.normalize(_grid(lam, mu))
 
     edges = []
     for mk in targets:
