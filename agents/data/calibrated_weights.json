@@ -1,0 +1,29 @@
+{
+  "guncelleme_ts": 1791408538.6207557,
+  "esik": 50,
+  "spor": {
+    "basketbol": {
+      "n": 0,
+      "durum": "YETERSIZ VERI (0/50)",
+      "olcekler": {
+        "B2B": 1.0,
+        "Tempo": 1.0
+      }
+    },
+    "hokey": {
+      "n": 0,
+      "durum": "YETERSIZ VERI (0/50)",
+      "olcekler": {
+        "B2B": 1.0,
+        "Kaleci": 1.0
+      }
+    },
+    "tenis": {
+      "n": 0,
+      "durum": "YETERSIZ VERI (0/50)",
+      "olcekler": {
+        "Tenis Zemin": 1.0
+      }
+    }
+  }
+}
