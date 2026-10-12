@@ -167,6 +167,60 @@ def ilk_oran(anahtar, oran):
     return d[anahtar][0], d[anahtar][1]
 
 
+def ekstrem_oran(anahtar, ilk, oran):
+    """ilk'e karsi gorulen EN BUYUK (mutlak deger) sapmayi surekli saklar - REBOUND tespiti icin:
+    'oran kirildi ama sonra geri sicradi' aninda GUNCEL (ilk vs simdi) fark kucuk olabilir, bu
+    yuzden sadece anlik karsilastirma yetmez; en-kotu (ya da en-iyi) nokta hatirlanmali.
+    -> (ekstrem_oran, ekstrem_dusus, ekstrem_ts). ilk yoksa (0, 0.0, simdi) - kirilma olcusuz.
+
+    11.10.2026: kayit [ekstrem_oran, ekstrem_dusus, ekstrem_ts, SON_oran, SON_ts] olarak 5 alana
+    cikarildi. Neden: FAKE-OUT (sahte kirilim) orani GERIYE DONUK olculemiyordu - yalniz 'ilk' ve
+    'ekstrem' saklaniyordu, 'guncel' saklanmiyordu; dolayisiyla "kirilim esigi asti, sonra acilisa
+    geri mi dondu?" sorusu ancak maci o anda bultende yakalayarak cevaplanabiliyordu (11.10
+    taramasinda bu sarti saglayan tek bir ornek bulundu - olcum yapilamadi).
+    SON_* her gorusmede guncellenir; ekstrem mantigi AYNEN korunur. Donus imzasi DEGISMEDI
+    (3 deger) - mevcut cagiranlar (_kirilim_tara) etkilenmez. Eski 3 alanli kayitlar okunabilir."""
+    simdi = time.time()
+    if not ilk:
+        return oran, 0.0, simdi
+    yol = os.path.join(VERI, "ekstrem_oran.json")
+    d = _oku(yol, {})
+    dusus = oran / ilk - 1.0
+    mevcut = d.get(anahtar)
+    if mevcut is None or abs(dusus) > abs(mevcut[1]):
+        kayit = [oran, dusus, simdi, oran, simdi]
+    else:
+        # ekstrem degismedi: yalniz SON_* tazelenir (zaman serisinin ucu)
+        kayit = [mevcut[0], mevcut[1], mevcut[2], oran, simdi]
+    d[anahtar] = kayit
+    # budama: en son GORULDUGU ana gore (eski surumde v[2] kullaniliyordu; aktif izlenen
+    # anahtarlar ekstremi eskidigi icin silinmesin)
+    d = {k: v for k, v in d.items() if simdi - (v[4] if len(v) > 4 else v[2]) < ILK_ORAN_OMUR}
+    _yaz(yol, d)
+    return kayit[0], kayit[1], kayit[2]
+
+
+# ---------------------------------------------------------------- telegram mukerrer-gonderim kilidi
+TELEGRAM_GONDERILEN_OMUR = 2 * 86400     # sinyal_log.jsonl append-only (satir-ici guncelleme YAPILMAZ -
+                                          # Render efemeral disk + es-zamanli yazim riski); ayri, kucuk bir
+                                          # "gonderildi" anahtar kumesi ayni isi gorur, ilk_oran ile ayni desen
+
+
+def telegram_gonderildi_mi(anahtar):
+    d = _oku(os.path.join(VERI, "telegram_gonderilen.json"), {})
+    return anahtar in d
+
+
+def telegram_isaretle(anahtar):
+    """Basariyla gonderilen sinyali kaydeder (bir daha gonderilmesin). -> True/False (yazim basarisi)."""
+    yol = os.path.join(VERI, "telegram_gonderilen.json")
+    d = _oku(yol, {})
+    simdi = time.time()
+    d[anahtar] = simdi
+    d = {k: v for k, v in d.items() if simdi - v < TELEGRAM_GONDERILEN_OMUR}
+    return _yaz(yol, d)
+
+
 # ---------------------------------------------------------------- hokey: kaleci
 def kaleci_dosyasi():
     return os.path.join(VERI, "kaleci.json")

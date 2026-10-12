@@ -275,6 +275,27 @@ class Secim(unittest.TestCase):
         tn = {"n": (10, 10), "eksik": []}
         self.assertLessEqual(M.guven("tenis", tn, 10, 0.0), M.SPORLAR["tenis"]["cap"])
 
+    def test_kirilim_bagimsiz_valueless_macta_da_yakalanir(self):
+        """Denetim bulgusu (08.10.2026): degerlendir() eskiden adaylar=[] (BWM'nin tek sectigi
+        pazar 'ok' filtresine girmiyorsa) hicbir kirilim kontrolu yapmadan None donerdi - akilli
+        para hareketi tamamen kacirilirdi. Artik TUM fiyatlanan pazarlar bagimsiz taranir."""
+        mod = M.model_basket(seri(100, 95), seri(98, 97), KO)
+        mac = {"id": "kirilim_test_1", "home": "A", "away": "B", "league": "Lig", "ts": KO}
+        yol_eski, K.VERI = K.VERI, tempfile.mkdtemp()
+        try:
+            K.ilk_oran(M._ilk_anahtar("basketbol", mac, "Maç Sonucu (Uzt.Dahil)", "1"), 1.05)
+            pz = [("Maç Sonucu (Uzt.Dahil)", None, {"1": 1.20, "2": 6.00})]  # 1.20 < MIN_ORAN(1.30) -> ok=False
+            r = M.degerlendir("basketbol", mac, mod, pz)
+            self.assertIsNotNone(r)                    # eskiden None donerdi
+            self.assertEqual(r["bayrak"], "KIRILIM")
+            self.assertEqual(r["kasa"], 0.0)            # valueless - OYNA degil
+            self.assertEqual(r["karar"], "İZLE")
+            self.assertTrue(r["kirilimlar"])
+            self.assertAlmostEqual(r["kirilimlar"][0]["dusus"], 1.20 / 1.05 - 1.0, places=4)
+        finally:
+            shutil.rmtree(K.VERI, ignore_errors=True)
+            K.VERI = yol_eski
+
     def test_kompakt_json_kucuk_ve_ham_veri_icermez(self):
         mod = M.model_basket(seri(100, 95), seri(98, 97), KO)
         mac = {"id": "1", "home": "A", "away": "B", "league": "Lig", "ts": KO}
@@ -338,6 +359,153 @@ class Kaynak(unittest.TestCase):
         tablo = {"washington capitals": {"sv": 0.92, "gp": 5}}
         self.assertEqual(K.nhl_bul("Washington Capitals", tablo)["sv"], 0.92)
         self.assertIsNone(K.nhl_bul("Jokerit Helsinki", tablo))
+
+
+class KonfluensMotoru(unittest.TestCase):
+    """BWM onerisi (EV>=%2) ile bagimsiz pazar kirilimi arasindaki KESISIM/CHOP tespiti."""
+
+    def setUp(self):
+        self.eski_veri, K.VERI = K.VERI, tempfile.mkdtemp()
+        self.mod = M.model_basket(seri(100, 95), seri(98, 97), KO)
+        self.mac = {"id": "konf1", "home": "A", "away": "B", "league": "Lig", "ts": KO}
+        self.pz = [("Maç Sonucu (Uzt.Dahil)", None, {"1": 1.46, "2": 3.10})]   # EV-maks taraf: "2" (B)
+
+    def tearDown(self):
+        shutil.rmtree(K.VERI, ignore_errors=True)
+        K.VERI = self.eski_veri
+
+    def test_kesisim_kasayi_yuzde_25_artirir_tavanli(self):
+        K.ilk_oran(M._ilk_anahtar("basketbol", self.mac, "Maç Sonucu (Uzt.Dahil)", "2"), 3.60)
+        r = M.degerlendir("basketbol", self.mac, self.mod, self.pz)
+        self.assertEqual(r["bayrak"], "SINYAL")
+        self.assertEqual(r["konfluens"], "KESISIM")
+        sat = M.fiyatla("basketbol", self.mod, self.pz, "A", "B")
+        b = next(s for s in sat if s["sec"] == "2")
+        risk, _ = M.risk_belirle("basketbol", self.mod, b)
+        baz_kasa = M.kelly_pct(b["p"], b["oran"], risk)
+        self.assertAlmostEqual(r["kasa"], round(min(baz_kasa * 1.25, M.COEF["STAKE_CAP"]), 2), places=2)
+
+    def test_chop_riski_yukseltir_kasa_boost_almaz(self):
+        K.ilk_oran(M._ilk_anahtar("basketbol", self.mac, "Maç Sonucu (Uzt.Dahil)", "1"), 1.70)
+        r = M.degerlendir("basketbol", self.mac, self.mod, self.pz)
+        self.assertEqual(r["bayrak"], "SINYAL")           # B'nin kendi EV'si hala gecerli
+        self.assertEqual(r["konfluens"], "CHOP")
+        self.assertEqual(r["risk"], "Yüksek")
+        self.assertTrue(any("kutuplasma" in n for n in r["risk_neden"]))
+
+    def test_kirilim_yoksa_konfluens_none(self):
+        r = M.degerlendir("basketbol", self.mac, self.mod, self.pz)
+        self.assertIsNone(r["konfluens"])
+
+    def test_chop_karari_pas_a_cevirir(self):
+        K.ilk_oran(M._ilk_anahtar("basketbol", self.mac, "Maç Sonucu (Uzt.Dahil)", "1"), 1.70)
+        r = M.degerlendir("basketbol", self.mac, self.mod, self.pz)
+        self.assertEqual(r["karar"], "PAS")        # EV pozitif olsa da cakisan sinyal OYNA'yi gecersiz kilar
+
+    def test_al_shamal_kesisim_onayli_sinyal_uretir(self):
+        """Senaryo: Al-Shamal MS 1 @ 2.76 (acilis/ilk) -> T-60 kirilimi 2.47 (-%10.5 dusus, EV>0).
+        FLG: KESISIM taktigi ve onayli (SINYAL) sinyal uretmeli."""
+        mod = M.model_basket(seri(94, 99, n=12), seri(100, 95, n=12), KO)
+        mac = {"id": "al_shamal", "home": "Al-Shamal", "away": "Rakip", "league": "Lig", "ts": KO}
+        K.ilk_oran(M._ilk_anahtar("basketbol", mac, "Maç Sonucu (Uzt.Dahil)", "1"), 2.76)
+        r = M.degerlendir("basketbol", mac, mod, [("Maç Sonucu (Uzt.Dahil)", None, {"1": 2.47, "2": 1.63})])
+        self.assertEqual(r["bayrak"], "SINYAL")
+        self.assertGreater(r["ev"], 0)
+        self.assertAlmostEqual(r["dusus"], -0.1051, places=3)      # -%10.5 dusus (orneğin sayisi)
+        self.assertEqual(r["konfluens"], "KESISIM")
+        self.assertEqual(r["karar"], "OYNA")
+        self.assertIn("doğruladı", r["konfluens_aciklama"])
+
+    def test_rebound_acilisa_donus_tespit_edilir(self):
+        """Senaryo (T-60 -> T-15): 2.76 (acilis) -> 2.47 (kirilim) -> 2.74 (acilisa yakin don).
+        Guncel fark artik esigin altinda ama EKSTREM kayit sayesinde REBOUND olarak isaretlenir."""
+        mod = M.model_basket(seri(94, 99, n=12), seri(100, 95, n=12), KO)
+        mac = {"id": "al_shamal_rebound", "home": "Al-Shamal", "away": "Rakip", "league": "Lig", "ts": KO}
+        K.ilk_oran(M._ilk_anahtar("basketbol", mac, "Maç Sonucu (Uzt.Dahil)", "1"), 2.76)
+        r1 = M.degerlendir("basketbol", mac, mod, [("Maç Sonucu (Uzt.Dahil)", None, {"1": 2.47, "2": 1.63})])
+        self.assertEqual(r1["konfluens"], "KESISIM")               # T-60: kirilim yakalandi (ekstrem kaydedilir)
+        r2 = M.degerlendir("basketbol", mac, mod, [("Maç Sonucu (Uzt.Dahil)", None, {"1": 2.74, "2": 1.55})])
+        self.assertEqual(r2["bayrak"], "SINYAL")
+        self.assertLess(abs(r2["dusus"]), M.COEF["KIRILIM"])       # guncel fark artik esigin altinda
+        self.assertEqual(r2["konfluens"], "REBOUND")
+        self.assertIn("REBOUND", r2["konfluens_aciklama"])
+        self.assertIn("nötrlendi", r2["konfluens_aciklama"])
+
+
+class TelegramBildirimi(unittest.TestCase):
+    """_telegram_gonder / K.telegram_gonderildi_mi+isaretle - AG CAGRISI YOK (telegram_bot.send_message
+    sahte bir fonksiyonla degistirilir)."""
+
+    def setUp(self):
+        self.eski_veri, K.VERI = K.VERI, tempfile.mkdtemp()
+        self.eski_env = (os.environ.get("TELEGRAM_BOT_TOKEN"), os.environ.get("TELEGRAM_CHAT_ID"))
+        os.environ["TELEGRAM_BOT_TOKEN"], os.environ["TELEGRAM_CHAT_ID"] = "sahte-token", "123"
+        import telegram_bot as TB
+        self.TB = TB
+        self.eski_send = TB.send_message
+        self.gonderilenler = []
+        TB.send_message = lambda tok, chat, text: self.gonderilenler.append((tok, chat, text))
+
+    def tearDown(self):
+        self.TB.send_message = self.eski_send
+        shutil.rmtree(K.VERI, ignore_errors=True)
+        K.VERI = self.eski_veri
+        for ad, deger in zip(("TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID"), self.eski_env):
+            if deger is None:
+                os.environ.pop(ad, None)
+            else:
+                os.environ[ad] = deger
+
+    def _r(self, bayrak="SINYAL", kasa=1.5, pick="Maç Sonucu: A", **ek):
+        """11.10.2026: bildirim kapisi (M.bildirime_deger) eklendikten sonra bu fikstur
+        GERCEKTEN bildirime deger olmak zorunda - eskiden bayragi olan her satir gidiyordu.
+        Degisenler: ts artik 2 saat sonra (ufuk kurali 6 sa), karar/OYNA alani var ve
+        'ilk' oran DUSUS yonunde (1.85 -> 2.10'dan dusmus) - eski fikstur 1.60 -> 1.85
+        yani oran YUKSELMIS bir 'kirilim'di, ki kapi bunu artik dogru sekilde reddediyor."""
+        ilk = 2.10
+        d = {"spor": "basketbol", "ts": time.time() + 2 * 3600, "mac": "A - B", "pick": pick,
+             "oran": 1.85, "bayrak": bayrak, "ilk": ilk, "dusus": (1.85 / ilk - 1.0), "kasa": kasa,
+             "ev": 0.05, "risk": "Düşük", "skor": "80-78", "karar": "OYNA",
+             "kirilim_kendi": {"ilk": ilk, "oran": 1.85, "dusus": (1.85 / ilk - 1.0)}}
+        d.update(ek)
+        return d
+
+    def test_kimlik_yoksa_sessizce_0_doner(self):
+        os.environ.pop("TELEGRAM_BOT_TOKEN", None)
+        self.assertEqual(M._telegram_gonder([self._r()]), 0)
+        self.assertEqual(self.gonderilenler, [])
+
+    def test_gonderir_ve_mukerrer_engellenir(self):
+        r = self._r()
+        self.assertEqual(M._telegram_gonder([r]), 1)
+        self.assertEqual(len(self.gonderilenler), 1)
+        self.assertIn("SINYAL", self.gonderilenler[0][2])   # bayrak metinde yer alir
+        # AYNI sinyal tekrar taramada (ayni spor/ts/mac/pick) BIR DAHA gonderilmez
+        self.assertEqual(M._telegram_gonder([r]), 0)
+        self.assertEqual(len(self.gonderilenler), 1)
+
+    def test_kirilim_mesajinda_oran_hareketi_gosterilir(self):
+        r = self._r(bayrak="KIRILIM", kasa=0.0)
+        self.assertEqual(M._telegram_gonder([r]), 1)
+        self.assertIn("2.10", self.gonderilenler[0][2])
+        self.assertIn("1.85", self.gonderilenler[0][2])
+
+    def test_izle_bayragi_artik_bildirim_gondermez(self):
+        """11.10 denetimi: 3 gunde 288 mesajin 325/437'si IZLE idi ve harmanlanmis EV
+        ortalamasi -%9.7'ydi. IZLE artik yalniz GUNLUK OZETE girer."""
+        self.assertEqual(M._telegram_gonder([self._r(bayrak="IZLE")]), 0)
+        self.assertEqual(self.gonderilenler, [])
+
+    def test_pas_karari_bildirim_gondermez(self):
+        self.assertEqual(M._telegram_gonder([self._r(karar="PAS")]), 0)
+
+    def test_kendi_pazarinda_kirilim_yoksa_gondermez(self):
+        """Gercek ornek: bayrak KIRILIM ama secimin kendi orani 1.63 -> 1.63 (+%0.0)."""
+        r = self._r(bayrak="KIRILIM", kasa=0.0, kirilim_kendi=None, ilk=1.85, dusus=0.0)
+        self.assertEqual(M._telegram_gonder([r]), 0)
+
+    def test_uzak_mac_bildirimi_ertelenir(self):
+        self.assertEqual(M._telegram_gonder([self._r(ts=time.time() + 11 * 3600)]), 0)
 
 
 class SinyalGunlugu(unittest.TestCase):

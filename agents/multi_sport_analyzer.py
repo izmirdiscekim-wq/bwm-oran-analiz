@@ -558,32 +558,131 @@ def guven(spor, mod, aday_sayisi, ev):
     return max(1, min(g, tavan))
 
 
+def _ilk_anahtar(spor, mac, pazar, sec):
+    return "%s|%s|%s|%s" % (SPORLAR[spor]["st"], mac["id"], pazar, sec)
+
+
+def _kirilim_tara(spor, mac, satirlar):
+    """TUM fiyatlanan ana-hat pazarlarinda (BWM'nin sectigi EN-IYI-EV aday'dan BAGIMSIZ) ilk
+    gorulen orana karsi kirilma taramasi. Neden: eskiden sadece secilen adayin (b) kendi oran
+    hareketi kontrol ediliyordu - BWM "Valueless Bet: SKIP" dese bile (adaylar=[]) hicbir pazarda
+    kirilma kontrolu YAPILMIYORDU (akilli para hareketi tamamen kacirilirdi). Her satir (ok=False
+    dahil) burada ilk_oran()'a kaydedilir - acilis.py'nin futboldaki rolunun multi-spor karsiligi.
+    AYRICA her satirin EKSTREM (en buyuk gorulen) sapmasi da ayri saklanir (ekstrem_oran) - REBOUND
+    tespiti GUNCEL farkin kucuk oldugu ama GECMISTE esigi astigi durumlari da yakalayabilsin diye.
+    -> ([{"pazar","pick","oran","ilk","dusus","satir"}] yalniz GUNCEL |dusus|>=KIRILIM asanlar,
+        {(pazar,sec): {"ilk","ekstrem_oran","ekstrem_dusus"}} TUM satirlar icin)."""
+    kirilimlar, ekstremler = [], {}
+    for s in satirlar:
+        anahtar = _ilk_anahtar(spor, mac, s["pazar"], s["sec"])
+        ilk, _ = K.ilk_oran(anahtar, s["oran"])
+        dusus = (s["oran"] / ilk - 1.0) if ilk else 0.0
+        eo, ed, _ = K.ekstrem_oran(anahtar, ilk, s["oran"])
+        ekstremler[(s["pazar"], s["sec"])] = {"ilk": ilk, "ekstrem_oran": eo, "ekstrem_dusus": ed}
+        if abs(dusus) >= COEF["KIRILIM"]:
+            kirilimlar.append({"pazar": s["pazar"], "pick": s["pick"], "oran": s["oran"], "ilk": ilk,
+                                "dusus": round(dusus, 4), "satir": s})
+    return kirilimlar, ekstremler
+
+
+REBOUND_ESIK_ORANI = 0.30   # ekstrem sapma esigi (KIRILIM) astiysa AMA guncel sapma bunun
+                            # KIRILIM*bu-oran'indan kucukse "acilista yakin" = REBOUND sayilir (varsayim)
+
+
+def _konfluens_kontrol(b, kirilimlar, ekstremler, bayrak):
+    """BWM'nin sectigi aday (b) ile _kirilim_tara'nin BAGIMSIZ yakaladigi pazar hareketleri
+    arasindaki kesisim/kutuplasma/geri-sicrama. ONEMLI DURUSTLUK NOTU: buradaki 'kirilim' futboldaki
+    balina.py gibi BAGIMSIZ bir kitaba (Pinnacle/dunya konsensusu) karsi DOGRULANMAMISTIR - sadece
+    kendi ILK GORDUGUMUZ iddaa oranimiza karsidir (bkz. _kirilim_tara). KESISIM/CHOP/REBOUND
+    etiketleri "model + kendi oran gecmisimiz ayni/ters/gecici yonde hareket etti" anlamina gelir,
+    bagimsiz kitap teyidi DEGILDIR - Telegram mesaji bunu acikca belirtir, "banko" ima edilmez.
+    -> (konfluens, detay) : konfluens in (None, "KESISIM", "CHOP", "REBOUND")."""
+    kendi = next((k for k in kirilimlar if k["pazar"] == b["pazar"] and k["satir"]["sec"] == b["sec"]), None)
+    zit = next((k for k in kirilimlar if k["pazar"] == b["pazar"] and k["satir"]["sec"] != b["sec"]), None)
+    if bayrak == "SINYAL" and kendi and kendi["dusus"] < 0:
+        return "KESISIM", kendi
+    if zit and not (kendi and kendi["dusus"] < 0):
+        return "CHOP", zit
+    if bayrak == "SINYAL":
+        e = ekstremler.get((b["pazar"], b["sec"]))
+        if e and e["ilk"] and e["ekstrem_dusus"] < 0 and abs(e["ekstrem_dusus"]) >= COEF["KIRILIM"]:
+            guncel_dusus = b["oran"] / e["ilk"] - 1.0
+            if abs(guncel_dusus) < COEF["KIRILIM"] * REBOUND_ESIK_ORANI:
+                return "REBOUND", {"ilk": e["ilk"], "ekstrem_oran": e["ekstrem_oran"],
+                                    "ekstrem_dusus": e["ekstrem_dusus"], "guncel_oran": b["oran"],
+                                    "guncel_dusus": guncel_dusus}
+    return None, None
+
+
+def _konfluens_aciklama(konfluens, detay, b):
+    """A/B/C sablonlari - SAF Python string formatlama, SIFIR LLM. -> metin | None."""
+    if konfluens == "KESISIM":
+        return ("🔥 Akıllı para BWM seçimini doğrudan doğruladı (%%%.1f düşüş). Yön kesinleşti."
+                % (detay["dusus"] * 100))
+    if konfluens == "REBOUND":
+        return ("⚠️ DÜZELTME / REBOUND: Erken akıllı para baskısı emildi, oran tekrar açılış "
+                "seviyesine yakın girdi (@%.2f). BWM temel EV değeri geçerli ancak piyasa ivmesi "
+                "nötrlendi." % detay["guncel_oran"])
+    if konfluens == "CHOP":
+        return ("❌ CHOP / RİSK: BWM modeli %s derken, son hacim rakip tarafa (%s) kırıldı (%%%.1f). "
+                "Maç yüksek riskli/çelişkili ilan edildi (PAS)."
+                % (b["pick"], detay["pick"], detay["dusus"] * 100))
+    return None
+
+
 def degerlendir(spor, mac, mod, pazar_listesi, hcp_ok=True):
-    """Tek mac -> sonuc sozlugu (bayrak dahil) ya da None (fiyatlanabilir aday yok)."""
+    """Tek mac -> sonuc sozlugu (bayrak dahil) ya da None (ne fiyatlanabilir aday ne bagimsiz
+    kirilim var). BWM adayi (b) yoksa ama baska bir pazarda kirilim varsa, deger-dislanmis
+    (valueless) mac bile KIRILIM bayragiyla doner (kasa=0, risk='-' - OYNA degil, sadece IZLE)."""
     satirlar = fiyatla(spor, mod, pazar_listesi, mac["home"], mac["away"], hcp_ok)
+    kirilimlar, ekstremler = _kirilim_tara(spor, mac, satirlar)
     adaylar = [s for s in satirlar if s["ok"]]
-    if not adaylar:
+    if adaylar:
+        b = max(adaylar, key=lambda s: s["ev"])
+        risk, neden = risk_belirle(spor, mod, b)
+    elif kirilimlar:
+        b = max(kirilimlar, key=lambda k: abs(k["dusus"]))["satir"]
+        risk, neden = "-", ["BWM adayi yok (valueless/SKIP) - bagimsiz pazar kirilimi"]
+    else:
         return None
-    b = max(adaylar, key=lambda s: s["ev"])
-    ilk, _ = K.ilk_oran("%s|%s|%s|%s" % (SPORLAR[spor]["st"], mac["id"], b["pazar"], b["sec"]), b["oran"])
+    ilk, _ = K.ilk_oran(_ilk_anahtar(spor, mac, b["pazar"], b["sec"]), b["oran"])
     dusus = (b["oran"] / ilk - 1.0) if ilk else 0.0
-    risk, neden = risk_belirle(spor, mod, b)
-    if b["ev"] >= COEF["EV_SINYAL"]:
+    if adaylar and b["ev"] >= COEF["EV_SINYAL"]:
         bayrak = "SINYAL"
-    elif b["ev_ham"] >= COEF["MIN_EV_HAM"]:
+    elif adaylar and b["ev_ham"] >= COEF["MIN_EV_HAM"]:
         bayrak = "IZLE"
-    elif abs(dusus) >= COEF["KIRILIM"]:
+    elif abs(dusus) >= COEF["KIRILIM"] or kirilimlar:
         bayrak = "KIRILIM"
     else:
         bayrak = None
-    kasa = kelly_pct(b["p"], b["oran"], risk)
+    kasa = kelly_pct(b["p"], b["oran"], risk) if adaylar else 0.0
+    # Secilen adayin KENDI pazarindaki lehte (oran DUSEN) kirilimi - varsa. Bayrak "KIRILIM"
+    # olabilmesi icin BASKA bir pazarda kirilim olmasi yetiyor (`or kirilimlar` dali); o yuzden
+    # "bu satirin kendi secimine akilli para geldi mi?" sorusunun ayri bir cevabi gerekiyor.
+    # Bildirim kapisi ve mesaj metni bu alani kullanir, bayragi DEGIL (bkz. bildirime_deger).
+    kirilim_kendi = next((k for k in kirilimlar
+                          if k["pazar"] == b["pazar"] and k["satir"]["sec"] == b["sec"]
+                          and k["dusus"] <= -COEF["KIRILIM"]), None)
+    konfluens, konfluens_detay = _konfluens_kontrol(b, kirilimlar, ekstremler, bayrak) if adaylar else (None, None)
+    karar_override = None
+    if konfluens == "KESISIM":
+        kasa = round(min(kasa * 1.25, COEF["STAKE_CAP"]), 2)      # guven katsayisi: kasa +%25, tavan sabit
+    elif konfluens == "CHOP":
+        risk = "Yüksek"
+        neden = list(neden) + ["ters yonde bagimsiz kirilim (%s %+.1f%%) - kutuplasma riski"
+                                % (konfluens_detay["pick"], konfluens_detay["dusus"] * 100)]
+        karar_override = "PAS"       # cakisan sinyal - EV pozitif olsa da OYNA onerilmez
     return {"spor": spor, "mac": "%s - %s" % (mac["home"], mac["away"]), "lig": mac["league"], "ts": mac["ts"],
             "pick": b["pick"], "oran": b["oran"], "ilk": ilk, "dusus": dusus, "p_mod": b["p_mod"],
             "p_mkt": b["p_mkt"], "p": b["p"], "ev": b["ev"], "ev_ham": b["ev_ham"], "skor": skor_tahmin(mod),
             "kasa": kasa, "risk": risk, "risk_neden": neden, "bayrak": bayrak,
-            "guven": guven(spor, mod, len(adaylar), b["ev"]), "f": mod["f"], "eksik": mod["eksik"], "n": mod["n"],
-            "karar": ("OYNA" if bayrak == "SINYAL" and kasa > 0 else
-                      "İZLE" if bayrak else "SKIP")}
+            "guven": guven(spor, mod, len(adaylar), b["ev"]) if adaylar else 0,
+            "f": mod["f"], "eksik": mod["eksik"], "n": mod["n"], "kirilimlar": kirilimlar,
+            "kirilim_kendi": kirilim_kendi,
+            "konfluens": konfluens, "konfluens_detay": konfluens_detay,
+            "konfluens_aciklama": _konfluens_aciklama(konfluens, konfluens_detay, b),
+            "karar": karar_override or ("OYNA" if bayrak == "SINYAL" and kasa > 0 else
+                                         "İZLE" if bayrak else "SKIP")}
 
 
 def kompakt(r):
@@ -707,8 +806,10 @@ def _tenis_zemin_elo(mac, v):
     return (ET.gecmisten_kur(sp_key, mac["home"], gh_z), ET.gecmisten_kur(sp_key, mac["away"], ga_z))
 
 
-def tara(spor_adi="hepsi", saat=12.0, n=30, tum=False, log=True):
-    """-> (sonuclar, ozet). sonuclar: modeli kurulabilen tum maclar; bayrakli olanlar r['bayrak'] ile secilir."""
+def tara(spor_adi="hepsi", saat=12.0, n=30, tum=False, log=True, bildir=False):
+    """-> (sonuclar, ozet). sonuclar: modeli kurulabilen tum maclar; bayrakli olanlar r['bayrak'] ile secilir.
+    bildir=True: bayrakli (SINYAL/IZLE/KIRILIM) sinyaller Telegram'a gonderilir (mukerrer kilitli,
+    bkz. _telegram_gonder) - ozet sozlugune her sporun 'telegram' anahtariyla gonderilen sayisi eklenir."""
     ad = TAKMA.get(spor_adi, spor_adi)
     secili = list(SPORLAR) if ad == "hepsi" else [ad]
     s = F._get_session()
@@ -761,8 +862,12 @@ def tara(spor_adi="hepsi", saat=12.0, n=30, tum=False, log=True):
             if r["bayrak"]:
                 ozet[sp]["bayrakli"] += 1
             sonuclar.append(r)
+    bayrakli = [r for r in sonuclar if r["bayrak"]]
     if log:
-        _logla([r for r in sonuclar if r["bayrak"]])
+        _logla(bayrakli)
+    if bildir:
+        for sp in secili:
+            ozet[sp]["telegram"] = _telegram_gonder([r for r in bayrakli if r["spor"] == sp])
     return sonuclar, ozet
 
 
@@ -789,21 +894,245 @@ def _logla(bayrakli):
             if anah in var:
                 continue
             var.add(anah)
+            # 11.10.2026: dusus/guven/konfluens/kirilim_kendi YAZILMIYORDU - bu yuzden 109
+            # gecmis KIRILIM kaydinin kaci KENDI pazarinda lehte kirilimdi GERIYE DONUK
+            # olculemedi (bkz. test_telegram_filter.py Bolum A). Artik yaziliyor.
+            kk = r.get("kirilim_kendi")
             yeni.append({"kaynak": anah[0], "esd_ms": anah[1], "ev": r["mac"], "lig": r["lig"],
                          "pazar": r["pick"], "oran": r["oran"], "p_model": round(r["p_mod"], 4),
                          "p_piyasa": round(r["p_mkt"], 4), "ev_yuzde": round(r["ev"] * 100, 2),
                          "tip": r["bayrak"], "karar": r["karar"], "kasa_pct": r["kasa"],
-                         "risk": r["risk"], "f": r["f"], "gonderildi": False})
+                         "risk": r["risk"], "f": r["f"], "gonderildi": False,
+                         "dusus": round(r["dusus"], 4) if r.get("dusus") is not None else None,
+                         "kirilim_kendi_dusus": round(kk["dusus"], 4) if isinstance(kk, dict) else None,
+                         "guven": r.get("guven"), "konfluens": r.get("konfluens")})
         HL.sinyal_coklu_yaz(yeni)
     except Exception:
         pass
 
 
+# ---------------------------------------------------------------- telegram bildirimi
+_SPOR_EMOJI = {"basketbol": "🏀", "hokey": "🏒", "tenis": "🎾"}
+_BAYRAK_EMOJI = {"SINYAL": "🟢", "IZLE": "🟡", "KIRILIM": "⚡"}
+
+BILDIRIM_UFKU_SAAT = 6.0     # mac bundan uzaksa bildirim ERTELENIR (atilmaz - sonraki tur dener)
+
+
+def bildirime_deger(r, simdi=None):
+    """Bayrakli bir satir Telegram'i caldirmali mi? -> (evet_mi, sebep). Saf fonksiyon.
+
+    11.10.2026 DENETIMI (n=437 bayrakli sinyal / 5 gun, bkz. test_telegram_filter.py):
+    eski kapi `if r["bayrak"]` idi ve 3 gunde 288 mesaj gonderdi - bu mesajlarin %99.8'i
+    KAYIT ANINDA EV <= 0 (ortalama -%9.7), icinde 0 SINYAL ve 0 OYNA vardi. Yani bildirimlerin
+    tamami "izleme" ya da "pas" satiriydi; nicelik yuksek, nitelik sifirdi.
+
+    Asagidaki kurallar hicbir COEF esigini GEVSETMEZ - yalnizca bir bayragin TELEFON CALDIRMA
+    sartini sikilastirir. Bayrak/tablo/log semantigi DEGISMEZ: IZLE satirlari tabloda ve
+    sinyal_log'da kalir ve GUNLUK OZETE girer (bkz. gunluk_ozet_gonder), yalnizca anlik
+    bildirim gondermezler.
+
+    Hem canli sonuc sozlugunu (bayrak/ev/kirilim_kendi) hem sinyal_log satirini (tip/ev_yuzde/
+    dusus) kabul eder - tek dogruluk kaynagi olsun diye backtest harness'i de bunu cagirir.
+    """
+    tip = (r.get("bayrak") or r.get("tip") or "").strip()
+    ev = r.get("ev")
+    if ev is None and isinstance(r.get("ev_yuzde"), (int, float)):
+        ev = r["ev_yuzde"] / 100.0
+
+    # 1) Sistem kendisi "oynanmaz" dediyse telefon calmaz (CHOP -> karar=PAS).
+    if (r.get("karar") or "").strip() in ("PAS", "SKIP"):
+        return False, "karar=PAS/SKIP (sistem zaten oynanmaz dedi)"
+
+    # 2) IZLE bir OYNA onerisi DEGIL: esigi ev_ham'a (marj DUSULMEMIS ham model EV) dayanir.
+    #    Olcum: bu satirlarin harmanlanmis EV ortalamasi -%9.7. Gunluk ozete girer.
+    if tip == "IZLE":
+        return False, "bayrak=IZLE (ham model EV; marj dusulunce EV negatif) - gunluk ozete girer"
+    if tip not in ("SINYAL", "KIRILIM"):
+        return False, "bayrak yok/taninmiyor"
+
+    # 3) Oran tabani: 1.30 altinda marj EV'yi yer (CLAUDE.md / COEF["MIN_ORAN"]).
+    if isinstance(r.get("oran"), (int, float)) and r["oran"] < COEF["MIN_ORAN"]:
+        return False, "oran < %.2f" % COEF["MIN_ORAN"]
+
+    # 4) Yuksek riskli mac bildirilmez (CLAUDE.md handikap risk kurali / risk_belirle).
+    if (r.get("risk") or "").strip() in ("Yüksek", "Yuksek"):
+        return False, "risk=Yüksek"
+
+    # 5) KIRILIM yalniz KENDI pazarinda ve LEHTE (oran DUSMUS) sayilir. Eski kapi
+    #    `abs(dusus) >= esik or kirilimlar` idi: baska bir pazardaki kirilim satira KIRILIM
+    #    damgasi vuruyor, mesaj ise secilen adayin hareketsiz/yukselen oranini basiyordu
+    #    (gercek ornekler: 1.63->1.63 %+0.0, 1.65->1.72 %+4.2, -%7.5 yani esik alti).
+    if tip == "KIRILIM":
+        kk = r.get("kirilim_kendi")
+        dusus = kk["dusus"] if isinstance(kk, dict) else r.get("dusus")
+        if dusus is None:
+            return False, "KIRILIM ama kendi pazarinda lehte kirilim YOK (dogrulanamaz)"
+        if dusus > -COEF["KIRILIM"]:
+            yon = "lehte degil (oran yukseldi)" if dusus > 0 else "esik altinda"
+            return False, "kendi pazarinda kirilim %s (%+.1f%%)" % (yon, dusus * 100)
+
+    # 6) SINYAL icin harmanlanmis (marj dusulmus) EV tabani. KIRILIM yon kanitini 5'te verdi.
+    if tip == "SINYAL":
+        if not isinstance(ev, (int, float)):
+            return False, "EV bilinmiyor"
+        if ev < COEF["EV_SINYAL"]:
+            return False, "EV %+.1f%% < +%.0f%% esigi" % (ev * 100, COEF["EV_SINYAL"] * 100)
+
+    # 7) Bildirim ufku: 6 saatten uzak macta oran daha cok oynar ve mukerrer kilidi (2 gun)
+    #    yuzunden EN ERKEN/en az bilgili anda bir kez haber verip bir daha susuyordum.
+    #    ERTELEME: satir atilmaz, mac yakinlasinca sonraki tur yeniden degerlendirir.
+    ts = r.get("ts")
+    if isinstance(ts, (int, float)):
+        kalan = (ts - (simdi if simdi is not None else time.time())) / 3600.0
+        if kalan > BILDIRIM_UFKU_SAAT:
+            return False, "mac %.1f saat sonra (>%.0f sa ufku) - ERTELENDI" % (kalan, BILDIRIM_UFKU_SAAT)
+
+    return True, "GECTI"
+
+
+def _telegram_mesaj(r):
+    saat = datetime.fromtimestamp(r["ts"], TR).strftime("%d.%m %H:%M")
+    aciklama = r.get("konfluens_aciklama")
+    if r.get("konfluens") == "KESISIM":
+        return "\n".join([
+            "🔥 BWM + ORAN HAREKETİ ÇİFT ONAY SİNYALİ 🔥",
+            "🏆 %s %s (%s TSİ)" % (_SPOR_EMOJI.get(r["spor"], "🏅"), r["mac"], saat),
+            "🎯 BWM Önerisi: %s @ %.2f (EV: %+.1f%%)" % (r["pick"], r["oran"], r["ev"] * 100),
+            aciklama,
+            "💰 Önerilen Kasa: %%%.2f (güven katsayısı: +%%25)" % r["kasa"],
+            "_(Not: bağımsız kitap teyidi değil - kendi ilk gördüğümüz iddaa oranına göre)_"])
+    satirlar = ["%s BWM Multi-Spor — %s" % (_BAYRAK_EMOJI.get(r["bayrak"], "📍"), r["bayrak"]),
+                "%s %s (%s TSİ)" % (_SPOR_EMOJI.get(r["spor"], "🏅"), r["mac"], saat),
+                "📊 %s @ %.2f" % (r["pick"], r["oran"])]
+    # Oran hareketi satiri YALNIZ secimin KENDI pazarindaki dogrulanmis kirilimi gosterir.
+    # Eskiden bayrak KIRILIM ise adayin kendi (hareketsiz/yukselen) orani basiliyordu ve
+    # mesaj "⚡ KIRILIM ... 1.63 → 1.63 (+0.0%)" gibi kendisiyle celisiyordu.
+    kk = r.get("kirilim_kendi")
+    if isinstance(kk, dict) and kk.get("ilk"):
+        satirlar.append("📈 Oran Hareketi: %.2f → %.2f (%+.1f%%) — kendi pazarinda"
+                        % (kk["ilk"], kk["oran"], kk["dusus"] * 100))
+    elif r["bayrak"] == "KIRILIM" and r.get("ilk") and r.get("dusus") is not None \
+            and r["dusus"] <= -COEF["KIRILIM"]:
+        satirlar.append("📈 Oran Hareketi: %.2f → %.2f (%+.1f%%)" % (r["ilk"], r["oran"], r["dusus"] * 100))
+    if r["kasa"] > 0:
+        satirlar.append("🎯 EV: %+.1f%% | Kasa: %%%.2f | Risk: %s" % (r["ev"] * 100, r["kasa"], r["risk"]))
+    if aciklama and r.get("konfluens") in ("CHOP", "REBOUND"):
+        satirlar.append(aciklama)
+    satirlar.append("Tahmini skor: %s" % r["skor"])
+    return "\n".join(satirlar)
+
+
+def _telegram_gonder(bayrakli):
+    """Bayrakli (SINYAL/IZLE/KIRILIM) sinyalleri Telegram'a gonderir. Mukerrer kilidi
+    msa_kaynak.telegram_gonderildi_mi/isaretle ile (sinyal_log.jsonl append-only oldugu icin
+    satir-ici 'gonderildi' guncellemesi YAPILMAZ - bkz. msa_kaynak.py TELEGRAM_GONDERILEN_OMUR
+    notu). Kimlik yoksa / telegram_bot import edilemezse sessizce 0 doner (test ortaminda da
+    calisir, patlamaz). -> gonderilen sayisi."""
+    if not bayrakli:
+        return 0
+    try:
+        import telegram_bot as TB          # import-zamaninda load_dotenv() cagirir (.env -> os.environ)
+    except Exception:
+        return 0
+    tok = (os.environ.get("TELEGRAM_BOT_TOKEN") or "").strip()
+    chat = (os.environ.get("TELEGRAM_CHAT_ID") or "").strip()
+    if not (tok and chat):
+        return 0
+    gonderilen = 0
+    for r in bayrakli:
+        # BILDIRIM KAPISI: bayragi olan her satir DEGIL, yalniz bildirime deger olan gonderilir.
+        try:
+            uygun, _sebep = bildirime_deger(r)
+        except Exception:
+            uygun = False                      # kapi patlarsa SUSAR (gurultu tarafina dusmez)
+        if not uygun:
+            continue
+        anahtar = "multi:%s|%d|%s|%s" % (r["spor"], int(r["ts"] * 1000), r["mac"], r["pick"])
+        if K.telegram_gonderildi_mi(anahtar):
+            continue
+        try:
+            TB.send_message(tok, chat, _telegram_mesaj(r))
+        except Exception:
+            continue
+        K.telegram_isaretle(anahtar)
+        gonderilen += 1
+    return gonderilen
+
+
+# ---------------------------------------------------------------- gunluk ozet (tek mesaj)
+OZET_N = 5                   # ozete giren en iyi aday sayisi
+
+
+def _ozet_adaylari(sonuclar, n=OZET_N):
+    """Bildirime deger bulunmayan ama izlemeye deger satirlar: PAS/SKIP ve yuksek risk haric,
+    oran tabanini gecen, EV'si en yuksek ilk n. OYNA onerisi DEGIL - izleme listesi."""
+    uygun = []
+    for r in sonuclar or []:
+        try:
+            if not r.get("bayrak"):
+                continue
+            if (r.get("karar") or "").strip() in ("PAS", "SKIP"):
+                continue
+            if (r.get("risk") or "").strip() in ("Yüksek", "Yuksek"):
+                continue
+            if isinstance(r.get("oran"), (int, float)) and r["oran"] < COEF["MIN_ORAN"]:
+                continue
+            uygun.append(r)
+        except Exception:
+            continue
+    uygun.sort(key=lambda x: x.get("ev") if isinstance(x.get("ev"), (int, float)) else -9.0, reverse=True)
+    return uygun[:n]
+
+
+def ozet_mesaj(adaylar, gun_etiketi):
+    # DUZ METIN: telegram_bot.send_message parse_mode ALMIYOR (HTML etiketi duz yazi olarak gorunur).
+    satirlar = ["📋 BWM Multi-Spor — Günlük İzleme Listesi (%s)" % gun_etiketi,
+                "⚠️ Bunlar OYNA önerisi DEĞİL. İzleme adayı; EV'si negatif olanlar da var.", ""]
+    for i, r in enumerate(adaylar, 1):
+        saat = datetime.fromtimestamp(r["ts"], TR).strftime("%d.%m %H:%M")
+        satirlar.append("%d) %s %s (%s TSİ)" % (i, _SPOR_EMOJI.get(r["spor"], "🏅"), r["mac"], saat))
+        satirlar.append("   %s @ %.2f | EV: %+.1f%% | risk: %s"
+                        % (r["pick"], r["oran"], (r.get("ev") or 0) * 100, r.get("risk") or "-"))
+    satirlar.append("")
+    satirlar.append("Gerçek sinyal (SINYAL / kendi pazarında lehte kırılım) çıktığında ayrı mesaj gelir.")
+    return "\n".join(satirlar)
+
+
+def gunluk_ozet_gonder(sonuclar, n=OZET_N, gonder_fn=None, gun_etiketi=None):
+    """Gunde BIR kez tek mesaj: en iyi izleme adaylari. Anlik bildirim yerine toplu ozet -
+    bilgi kaybolmaz ama telefon gunde 1 kez calar. Mukerrer kilidi: gun basina tek anahtar.
+    -> gonderilen mesaj sayisi (0 veya 1)."""
+    gun = gun_etiketi or datetime.now(TR).strftime("%Y-%m-%d")
+    adaylar = _ozet_adaylari(sonuclar, n)
+    if not adaylar:
+        return 0
+    anahtar = "multi-ozet:%s" % gun
+    if K.telegram_gonderildi_mi(anahtar):
+        return 0
+    if gonder_fn is None:
+        try:
+            import telegram_bot as TB
+        except Exception:
+            return 0
+        tok = (os.environ.get("TELEGRAM_BOT_TOKEN") or "").strip()
+        chat = (os.environ.get("TELEGRAM_CHAT_ID") or "").strip()
+        if not (tok and chat):
+            return 0
+        gonder_fn = lambda metin: TB.send_message(tok, chat, metin)
+    try:
+        gonder_fn(ozet_mesaj(adaylar, gun))
+    except Exception:
+        return 0
+    K.telegram_isaretle(anahtar)
+    return 1
+
+
 # ---------------------------------------------------------------- CLI
 def tablo(sonuclar, ozet, tum=False):
     for sp, o in ozet.items():
-        print("%-9s taranan %2d | modelli %2d | bayrakli %2d | aday yok (suzgec) %2d | ornek yetersiz %2d | hcp isaret: %s"
-              % (sp, o["taranan"], o["model"], o["bayrakli"], o["aday_yok"], o["ornek_yetersiz"], o.get("hcp_isaret", "-")))
+        print("%-9s taranan %2d | modelli %2d | bayrakli %2d | aday yok (suzgec) %2d | ornek yetersiz %2d | hcp isaret: %s%s"
+              % (sp, o["taranan"], o["model"], o["bayrakli"], o["aday_yok"], o["ornek_yetersiz"], o.get("hcp_isaret", "-"),
+                 (" | telegram %d" % o["telegram"]) if "telegram" in o else ""))
     gor = sonuclar if tum else [r for r in sonuclar if r["bayrak"]]
     if not gor:
         print("\nBayrakli mac yok (esikler gevsetilmedi; iddaa marji nedeniyle bu beklenen sonuctur).")
@@ -845,6 +1174,8 @@ def main(argv=None):
     p.add_argument("--pipe", action="store_true", help="LLM'e gidecek ultra-compact PIPE satirlari (yalniz bayrakli)")
     p.add_argument("--tum", action="store_true", help="bayraksiz modelli maclari da goster")
     p.add_argument("--max", type=int, default=8, help="LLM'e en cok kac mac")
+    p.add_argument("--bildir", action="store_true",
+                    help="bayrakli (SINYAL/IZLE/KIRILIM) sinyalleri Telegram'a gonder (mukerrer kilitli)")
     a = p.parse_args(argv if argv is not None else sys.argv[1:])
     if a.komut == "kaleci":
         if len(a.args) < 2:
@@ -853,7 +1184,7 @@ def main(argv=None):
     elif a.komut == "durum":
         durum()
     else:
-        sonuclar, ozet = tara(a.spor, a.saat, a.n)
+        sonuclar, ozet = tara(a.spor, a.saat, a.n, bildir=a.bildir)
         fl = sorted([r for r in sonuclar if r["bayrak"]], key=lambda x: -x["ev"])[:a.max]
         if a.pipe:
             for r in fl:
