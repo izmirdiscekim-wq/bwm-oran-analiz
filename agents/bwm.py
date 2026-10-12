@@ -36,7 +36,7 @@ KATMAN 5 - CANLI BAHIS      (live.py; oyun-durumu modeli + de-vig'li canli piyas
   canli <takim> [--gecmis]    canli maci analiz et: OYNA / OYNAMA (siki filtreler, stake <= 0.5 Unit); tek mac = Adim Adim Canli Analiz + Nihai Tahmin blogu
   canli --hepsi [--bwm N]     tum canli maclar; --bwm N: en iyi N aday icin ayni blok (livefilters.py; test: test_livefilters.py)
 KATMAN 8 - SONUC TAKIBI     (settle.py; OYNA/SPEKULATIF kayitlari + Flashscore skorlari -> isabet/ROI/kalibrasyon)
-  sonuc [--gun 3]             kararlarin basarisini olc (data/bets_log.jsonl)
+  sonuc [--gun 3|--arsiv]     kararlarin basarisini olc (bets_log.jsonl; --arsiv = yerel arsivden kalici yerlesim)
   kalibre [--gun 7]           model piyasadan fazla bilgi tasiyor mu? (pazar bazli log-loss, bootstrap GA; backtest_model.py)
 KATMAN 10 - KONSENSUS REFERANS (oddsapi.py; The Odds API, anahtar data/odds_api.key; ucretsiz plan 500 kredi/ay)
   referans [--sa 24] [--lig 6] [--yenile] [--n 12]   iddaa 1X2 + Alt/Ust'u cok kitapli (Pinnacle agirlikli) vig-arindirilmis konsensusa karsi olc: EV_ref, DEGER
@@ -163,6 +163,12 @@ def main():
             print(_eksik_modul_mesaji("kupon", "kupon")); return
         kupon.main(rest)
     elif cmd == "sonuc":
+        if "--arsiv" in rest or "--rapor" in rest:
+            try:
+                import settle_arsiv           # yerel arsivden KALICI yerlesim + birikmis karne
+            except ImportError:
+                print(_eksik_modul_mesaji("settle_arsiv", "sonuc --arsiv")); return
+            settle_arsiv.main([a for a in rest if a != "--arsiv"]); return
         try:
             import settle
         except ImportError:

@@ -14,7 +14,7 @@ YENI KURAL (shrinkage / Bayes mantigi; esikler simulasyonla secildi, test_decisi
   - EV > %25 = veri hatasi supheli (bayat skor/oran), oynanmaz. SPEKULATIF: harman EV >= -%3 (model celiskili degilse). Digeri PASS.
   - Kasa: risk seviyesi (Dusuk/Orta/Yuksek) -> kesirli Kelly (Yuksek 1/8, digerleri 1/4); stake yalniz harman EV > 0 iken (kullanici prompt'u: 'sadece pozitif value oner');
     OYNA icin min oran = EV esiginin korundugu en dusuk oran.
-  - ESNEK ADAY (hic OYNA yokken, kullanici istegi): ayri kademe, model EV >= +%2 + harman EV >= -%6 (canli -%8, marj engeli yok), 0.25 Unit sabit; bkz. flex_ok.
+  - ESNEK ADAY (hic OYNA yokken, kullanici istegi): ayri kademe, model EV >= +%2 + harman EV >= -%6 (canli -%8, marj engeli yok), 0 Unit (OLCUM kademesi: kanit birikene kadar para yok); bkz. flex_ok.
 DURUST SINIR: pazar marji (~%4-8) bir modelin gercek ustunlugu olmadan asilamaz; OYNA'nin BASARISI yalnizca `bwm.py sonuc` ile
 (kayitli bahisler + Flashscore skorlari) olculebilir. Simulasyonda bile bilgili modellerin gercek ROI'si ~ -%2..+%3'tur.
 """
@@ -150,8 +150,14 @@ def spec_units(ev):
 # SPEKULATIF tabani (harman EV >= -%3) yerine MODEL EV >= +%2 (kullanici prompt'unun 'value' tanimi: model p x oran - 1) ve harman EV >= -%6 (canli -%8:
 # canli marj ~%17, piyasa payi tek basina ~-%14 EV); canlida marj engeli kalkar (bedel EV'de gorunur). Tek model (2. model yok) kabul, bu yuzden
 # model-piyasa sapmasi siniri OYNA'dan (%30) SIKI: %25. KALAN guvenlik engelleri: celiskili model, veri hatasi suphesi (EV > %25), bayat/tutarsiz piyasa,
-# canli dakika penceresi, uzun sans (p < %25). Stake sabit 0.25 Unit. Harman EV <= 0 => beklenen ROI ~0/negatif; ayri kademe olarak kaydedilir (`bwm.py sonuc`).
-FLEX_MODEL_EV, FLEX_EV_PRE, FLEX_EV_LIVE, FLEX_REL_DIV, FLEX_MIN_P, FLEX_UNITS = 0.02, -0.06, -0.08, 0.25, 0.25, 0.25
+# canli dakika penceresi, uzun sans (p < %25). Stake 0 Unit (olcum kademesi). Harman EV <= 0 => beklenen ROI ~0/negatif; ayri kademe olarak kaydedilir (`bwm.py sonuc`).
+# OLCUM (08.10.2026, settle_arsiv.py + settled_log.jsonl): ESNEK, units>0 olan TEK kademeydi
+# (gercek para yalnizca burada hareket ediyordu) ve olculen en kotu dilimdi: n=16, isabet %31,
+# ROI -%39.1, kayit anindaki EV -%6. Ayni denetimde 409 yerlesmis kararin TAMAMI kayit aninda
+# EV <= 0 cikti. n=16 < 30 oldugu icin "kanitlandi" denmez; ama bu kademe tasarimi geregi EV
+# negatifken de aday uretiyor, o yuzden kanit birikene kadar STAKE 0: aday uretilmeye ve
+# `bwm.py sonuc --rapor` ile olculmeye devam eder, para riske edilmez. Geri acmak icin: 0.25.
+FLEX_MODEL_EV, FLEX_EV_PRE, FLEX_EV_LIVE, FLEX_REL_DIV, FLEX_MIN_P, FLEX_UNITS = 0.02, -0.06, -0.08, 0.25, 0.25, 0.0
 
 
 def flex_ok(ev, pmod, p, odds, teyit, rdiv, live=False):
