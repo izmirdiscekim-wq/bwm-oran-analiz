@@ -173,6 +173,7 @@ eklendi: 2026-10-02
 hedef: İY/MS favori-kaybeder 21.00-21.99 + 0-1Gol 5.00-5.99 -> 3.5 Üst
 oyna: u35
 basari: top>=4
+bildirim: hayir
 orijinal: DUMMY CASE 2: Oran_X 21-21.99, 0-1Gol 5-5.99 ise 3.5 Gol Üstü
 iymsfav        20.50-22.48
 tg01           4.50-6.49  
@@ -255,6 +256,7 @@ eklendi: 2026-10-05
 hedef: İlk yarı 0,5 Üst (kaynak: İDDAATV / YouTube, kapanış oranı)
 oyna: iyu05
 basari: iytop>=1
+aktif: hayir
 not: 05.10.2026 testi: 4 maç uydu, 2'si sonuçlu, 2'si tuttu (n çok küçük, kanıt değil). İY/MS pazarı arşivde yalnız 107 sonuçlu maçta açık -> nadir tetiklenir, açık bırakıldı.
 orijinal: İY/MS 1-1 oranı 1.90-2.00 arasında VE toplam gol 2-3 oranı 1.75-1.85 arasındaysa ilk yarı 0,5 üst oyna; kapanış oranına bak
 t5/0/1         1.71-2.04  
@@ -278,7 +280,7 @@ kategori: Oran Analizi
 eklendi: 2026-10-05
 hedef: 2,5 Üst + KG Var (kaynak: Kontrivo Plus / YouTube)
 oyna: u25 kgvar
-basari: top>=3
+basari: top>=3 and kg
 not: 05.10.2026 testi: 11 maç uydu, 6 sonuçlu -> 2,5 Üst 5/6, KG Var 2/6 (n<30, kanıt değil).
 orijinal: Favorinin 2-1 skor oranı 7 civarı, 1-1 skoru da 7 civarı, 0-0 skoru 10 üstü ise KG Var + üst oyna
 t777/0/3       6.25-7.75  
@@ -290,7 +292,7 @@ kategori: Oran Analizi
 eklendi: 2026-10-05
 hedef: 2,5 Üst + KG Var, deplasman favori (kaynak: Kontrivo Plus / YouTube)
 oyna: u25 kgvar
-basari: top>=3
+basari: top>=3 and kg
 aktif: hayir
 not: 05.10.2026 testi: 1 maç uydu, sonuçlu 0.
 t777/0/19      6.50-7.50   # 1-2 skoru ~7.00

@@ -8,7 +8,8 @@ başlamamış maçlara uygular. Kurallar KOD DEĞİL, düzenlenebilir metin dosy
   bwm.py taktik --liste | --kurallar | --kodlar
   bwm.py taktik --ekle "Ad" --hedef "..." --oyna u45 --basari "top>=5" --kural "u45 4,20-5,10" --kural "tg45 2,80-3,10" [--orijinal "video metni"] [--kategori K]
   bwm.py taktik --degistir "Ad" [aynı bayraklar; verilen alan değişir, --kural verilirse TÜM kurallar yenilenir]
-  bwm.py taktik --kapat "Ad" | --ac "Ad" | --sil "Ad"
+  bwm.py taktik --kapat "Ad" | --ac "Ad" | --sil "Ad" | --sustur "Ad" | --seslendir "Ad"
+      --sustur: taktik TARANIR ve --arsiv ile OLCULUR ama Telegram bildirimi gonderilmez (bildirim: hayir)
   bwm.py taktik --arsiv [--gun-geri 7]   arşivdeki geçmiş maçlarda isabeti ölç (önce sonuçları işler)
 --ekle/--degistir/--ac sonrası o taktik hemen taranır (tek komut = kaydet + sonuç). Her yazma öncesi taktikler.txt.bak yedeği alınır.
 Özel pazar kodu: dosyada `@kod ad = t<MTID>[/SOV]/<N>  # açıklama` satırı (kod değişikliği gerekmez).
@@ -36,7 +37,7 @@ SCRIPT_DIR = N.SCRIPT_DIR
 DOSYA = os.path.normpath(os.path.join(SCRIPT_DIR, "..", "skills", "bwm-taktik-tara", "taktikler.txt"))
 ARSIV = os.path.join(SCRIPT_DIR, "data", "arsiv")
 KATEGORI = "Oran Analizi"
-ANAHTAR = ("kategori", "spor", "eklendi", "hedef", "oyna", "basari", "not", "orijinal", "aktif", "istatistik", "aksiyon")
+ANAHTAR = ("kategori", "spor", "eklendi", "hedef", "oyna", "basari", "not", "orijinal", "aktif", "istatistik", "aksiyon", "bildirim")
 
 # kod -> (MTID, SOV|None, çıktı N, açıklama). Ham biçim: t<MTID>[/<SOV>]/<N>   ör. t43/4 = Toplam Gol 6+
 KODLAR = {
@@ -279,7 +280,7 @@ def dosya_oku(yol=DOSYA):
         try:
             if satir.startswith("["):
                 cur = {"ad": satir.strip("[] "), "kategori": KATEGORI, "spor": "futbol", "eklendi": "", "hedef": "", "oyna": [], "basari": None, "not": "",
-                       "orijinal": "", "aktif": True, "kurallar": [], "istatistik": "", "aksiyon": ""}
+                       "orijinal": "", "aktif": True, "bildirim": True, "kurallar": [], "istatistik": "", "aksiyon": ""}
                 out.append(cur)
             elif m := re.match(r"(" + "|".join(ANAHTAR) + r")\s*:\s*(.*)$", satir):
                 k, v = m[1], m[2].strip()
@@ -289,8 +290,9 @@ def dosya_oku(yol=DOSYA):
                     cur["oyna"] = [x for x in re.split(r"[ ,]+", v) if x]
                     for x in cur["oyna"]:
                         _kod_dogrula(x)
-                elif k == "aktif":
-                    cur["aktif"] = N._norm(v) not in ("hayir", "yok", "kapali", "false", "0", "pasif")
+                elif k in ("aktif", "bildirim"):
+                    # bildirim: hayir -> taktik TARANIR ve olculur ama Telegram'a GITMEZ
+                    cur[k] = N._norm(v) not in ("hayir", "yok", "kapali", "false", "0", "pasif")
                 elif k == "spor":
                     cur["spor"] = v.strip().lower() if v.strip().lower() in SPOR else "futbol"
                 else:
@@ -319,6 +321,8 @@ def _blok_txt(t):
         L.append(f"aksiyon: {t['aksiyon']}")
     if not t["aktif"]:
         L.append("aktif: hayir")
+    if not t.get("bildirim", True):
+        L.append("bildirim: hayir")
     for k in ("not", "orijinal"):
         if t.get(k):
             L.append(f"{k}: {t[k].replace('#', '').replace(chr(10), ' / ')}")
@@ -375,7 +379,7 @@ def duzenle(a, yol=DOSYA):
         tk.append(t)
         msg, hedef = f"KAYDEDİLDİ: {t['ad']} ({len(t['kurallar'])} kural, kategori {t['kategori']})", t["ad"]
     else:
-        ad = a.degistir or a.kapat or a.ac or a.sil
+        ad = a.degistir or a.kapat or a.ac or a.sil or a.sustur or a.seslendir
         t = _bul(tk, ad)
         if not t:
             raise ValueError(f"'{ad}' bulunamadı (--liste)")
@@ -385,6 +389,10 @@ def duzenle(a, yol=DOSYA):
         elif a.kapat or a.ac:
             t["aktif"] = bool(a.ac)
             msg, hedef = f"{'AÇILDI' if a.ac else 'KAPATILDI'}: {t['ad']}", (t["ad"] if a.ac else None)
+        elif a.sustur or a.seslendir:
+            t["bildirim"] = bool(a.seslendir)
+            msg, hedef = ("BILDIRIM ACILDI" if a.seslendir else
+                          "SUSTURULDU (taramada kalir, Telegram bildirimi gitmez)") + ": " + t["ad"], None
         else:
             for k, v in (("hedef", a.hedef), ("basari", a.basari), ("not", a.not_), ("orijinal", a.orijinal), ("kategori", a.kategori),
                          ("istatistik", a.istatistik), ("aksiyon", a.aksiyon)):
@@ -730,6 +738,13 @@ def telegram_adaylari(olaylar, taktikler, ilk_zorla=False):
         ks = t["kurallar"]
         if not ks or t.get("spor", "futbol") != "futbol":
             continue
+        # 12.10.2026: taktik basina bildirim susturma. "bildirim: hayir" olan taktik TARANIR,
+        # --arsiv ile OLCULMEYE devam eder, ama Telegram'a (Render botu otomatik_tara + CLI
+        # --telegram) GITMEZ. Neden gerekti: B1 (3.5Ust-0-1gol) isabet %50 / basabas %52 /
+        # ROI -%7.0 cikti ama n=14 kanit esiginin altinda - kapatmak erken, mesaj atmasi ise
+        # bosa gurultu. Kapatmakla susturmak ayri iki karar oldu.
+        if not t.get("bildirim", True):
+            continue
         for e in olaylar:
             s = degerlendir(e, ks)
             if not all(ok for _, ok in s):
@@ -835,8 +850,37 @@ def _tara_arsiv(a, taktikler):
         tutan = sum(1 for x in bil if x[2])
         kap = [x for x in secili if _kapanis_mi(x[0]["esd"], x[0]["son_cekim"])]
         gun = [x for x in secili if not _kapanis_mi(x[0]["esd"], x[0]["son_cekim"])]
-        print(f"■ {t['ad']}{' [' + sp + ']' if sp != 'futbol' else ''} | kuralları sağlayan {len(secili)} (KAPANIŞ {len(kap)} + GÜNCEL {len(gun)}) | sonuçlu {len(bil)}, tuttu {tutan}"
-              + (f" (%{100 * tutan / len(bil):.0f}; n<30: kanıt değil)" if bil and len(bil) < 30 else ""))
+        # 12.10.2026: ISABET TEK BASINA YANILTIYOR -> basabas esigi (= 1/oran) ve ROI de basilir.
+        # Olcum: YUKSEK kademe %83.6 isabetle "basarili" gorunuyordu ama ortalama orani 1.06,
+        # yani basabas %94.5 -> ROI -%11.6. Tersine Kontrivo taktigi %49 isabetle "basarisiz"
+        # gorunuyor ama ortalama oran 2.31 (basabas %43) oldugu icin ROI +%17.3. Bu yuzden bir
+        # taktik ancak "isabet > basabas" ise korunur; yuzde esigi (%70/%80) tek basina kullanilmaz.
+        _oran, _kar, _n_oran = [], 0.0, 0
+        for _r, _s, _b in bil:
+            _carp, _tam = 1.0, True
+            for _kod in (t["oyna"] or []):
+                _k2, _v = oyna_oran(_r, _kod)
+                if _v is None:
+                    _tam = False
+                    break
+                _carp *= _v
+            if not _tam or not t["oyna"]:
+                continue
+            _oran.append(_carp)
+            _kar += (_carp - 1.0) if _b else -1.0
+            _n_oran += 1
+        _ek = ""
+        if _n_oran:
+            _ort = sum(_oran) / _n_oran
+            _bb = 100.0 / _ort
+            _isb = 100.0 * tutan / len(bil)
+            _ek = (f" | ort.oran {_ort:.2f}, başabaş %{_bb:.0f}, ROI {100.0 * _kar / _n_oran:+.1f}%"
+                   f" ({'KÂRLI' if _isb > _bb else 'ZARARLI'}; oran örneklemi {_n_oran})")
+        print(f"■ {t['ad']}{' [' + sp + ']' if sp != 'futbol' else ''}"
+              + ("" if t.get("bildirim", True) else " [SUSTURULMUŞ]")
+              + f" | kuralları sağlayan {len(secili)} (KAPANIŞ {len(kap)} + GÜNCEL {len(gun)}) | sonuçlu {len(bil)}, tuttu {tutan}"
+              + (f" (%{100 * tutan / len(bil):.0f}{'; n<30: kanıt değil' if len(bil) < 30 else ''})" if bil else "")
+              + _ek)
 
         def _yaz(grup, baslik):
             if not grup:
@@ -883,6 +927,8 @@ def main(argv=None):
     p.add_argument("--n", type=int, default=15, help="taktik başına en fazla satır")
     p.add_argument("--yakin", action="store_true")
     p.add_argument("--arsiv", action="store_true")
+    p.add_argument("--sustur", metavar="AD", help="taktigi TARAMADA birak ama Telegram bildirimini kapat (bildirim: hayir)")
+    p.add_argument("--seslendir", metavar="AD", help="--sustur geri alir (bildirim: evet)")
     p.add_argument("--telegram", action="store_true", help="Telegram botu: yalnız bugünkü, şu an koşulu sağlayan maçlar (güncel oran), kısa çıktı")
     p.add_argument("--gun-geri", type=int, default=7)
     p.add_argument("--liste", action="store_true")
@@ -915,7 +961,7 @@ def main(argv=None):
             print("BASKETBOL (spor: basketbol; 'b' önekli): " + "; ".join(f"{k}: {v[0]}/{'' if v[1] is None else v[1]}/{v[2]} {v[3]}" for k, v in B.KODLAR.items()))
         print("favoriye göre değişen: " + "; ".join(f"{k} (ev→{va}, dep→{vb}): {FAV_ACIKLAMA.get(k, '')}" for k, (va, vb) in FAV_KODLAR.items()))
         return
-    if any((a.ekle, a.degistir, a.kapat, a.ac, a.sil)):
+    if any((a.ekle, a.degistir, a.kapat, a.ac, a.sil, a.sustur, a.seslendir)):
         try:
             msg, hedef = duzenle(a)
         except ValueError as ex:

@@ -115,7 +115,8 @@ class KuralTests(unittest.TestCase):
 class KayitTests(unittest.TestCase):
     def ns(self, **kw):
         d = dict(ekle=None, degistir=None, kapat=None, ac=None, sil=None, hedef=None, oyna=None, basari=None, not_=None,
-                 orijinal=None, kategori=None, spor=None, kural=None, istatistik=None, aksiyon=None)
+                 orijinal=None, kategori=None, spor=None, kural=None, istatistik=None, aksiyon=None,
+                 sustur=None, seslendir=None)
         d.update(kw)
         return argparse.Namespace(**d)
 
@@ -148,6 +149,56 @@ class KayitTests(unittest.TestCase):
                 self.assertIn("@kod ozel6", f.read())      # başlık ve özel kodlar korunur
             with self.assertRaises(ValueError):
                 T.duzenle(self.ns(ekle="Kuralsiz"), yol)
+
+
+    def test_bildirim_susturma_yaz_oku_round_trip(self):
+        """12.10.2026: bildirim: hayir -> taktik TARANIR/olculur ama Telegram'a gitmez.
+        Olcum: B1 (3.5Ust-0-1gol) isabet %50 / basabas %52 / ROI -%7.0 ama n=14 < 30 ->
+        kapatmak yerine susturuldu (kapatmak ile susturmak ayri iki karar)."""
+        with tempfile.TemporaryDirectory() as d:
+            yol = os.path.join(d, "taktikler.txt")
+            with open(yol, "w", encoding="utf-8") as f:
+                f.write(BASLIK)
+            T.duzenle(self.ns(ekle="Sessiz Taktik", oyna="u35", basari="top>=4", kural=["u35 1,80-2,00"]), yol)
+            t0 = T.dosya_oku(yol)[1][0]
+            self.assertTrue(t0["bildirim"])                       # varsayilan: bildirim ACIK
+            with open(yol, encoding="utf-8") as f:
+                self.assertNotIn("bildirim:", f.read())           # varsayilan dosyaya YAZILMAZ (kisa kalsin)
+
+            msg, hedef = T.duzenle(self.ns(sustur="Sessiz Taktik"), yol)
+            self.assertIn("SUSTURULDU", msg)
+            self.assertIsNone(hedef)                              # susturma sonrasi tarama tetiklenmez
+            t1 = T.dosya_oku(yol)[1][0]
+            self.assertFalse(t1["bildirim"])
+            self.assertTrue(t1["aktif"])                          # AKTIF kalir: taranir ve olculur
+            with open(yol, encoding="utf-8") as f:
+                self.assertIn("bildirim: hayir", f.read())
+
+            T.duzenle(self.ns(seslendir="Sessiz Taktik"), yol)
+            self.assertTrue(T.dosya_oku(yol)[1][0]["bildirim"])   # geri alinabilir
+
+    def test_susturulan_taktik_telegram_adaylarina_girmez(self):
+        """telegram_adaylari (Render botunun otomatik_tara'da cagirdigi fonksiyon) susturulani atlar."""
+        k = T.kural_coz("u35 1,00-9,99")                           # her oranda gecen kural
+        # u35 = (t=13, sov=3.5, n=2); _deger mk[i]["o"] sozlugunden str(n) ile okur
+        ev = {"esd_ms": 1, "hn": "A", "an": "B", "esd": 1, "lig": "L",
+              "mk": [{"t": 13, "sov": 3.5, "o": {"1": 1.95, "2": 1.90}}]}
+        acik = {"ad": "Acik", "kurallar": [k], "oyna": ["u35"], "spor": "futbol", "bildirim": True, "istatistik": ""}
+        sessiz = {"ad": "Sessiz", "kurallar": [k], "oyna": ["u35"], "spor": "futbol", "bildirim": False, "istatistik": ""}
+        acik_sonuc = T.telegram_adaylari([ev], [acik])
+        sessiz_sonuc = T.telegram_adaylari([ev], [sessiz])
+        self.assertEqual(len(sessiz_sonuc), 0)
+        # acik taktik gercekten aday uretiyor mu (testin kendisi anlamli olsun diye)
+        self.assertEqual(len(acik_sonuc), 1)
+
+    def test_basari_ifadesi_kg_bacagini_kontrol_edebilir(self):
+        """Duzeltilen hata: 'u25 kgvar' oynanirken basari 'top>=3' idi -> 3-0 mac TUTTU
+        sayiliyordu, oysa kombine bahis KAYBEDER (%24 puan sisirme, n=37)."""
+        uc_sifir = {"ms": [3, 0]}
+        iki_bir = {"ms": [2, 1]}
+        self.assertTrue(T.basari("top>=3", uc_sifir))              # eski (hatali) ifade
+        self.assertFalse(T.basari("top>=3 and kg", uc_sifir))      # duzeltilmis ifade
+        self.assertTrue(T.basari("top>=3 and kg", iki_bir))
 
     def test_veya_aralik_yaz_oku_round_trip(self):
         """dosya_yaz'ın yazdığı VEYA aralık satırı dosya_oku ile UYARI vermeden geri okunmalı (regresyon: ' | ' boşluklu ayraç bozuyordu)."""
